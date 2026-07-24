@@ -1,0 +1,241 @@
+const express = require('express');
+const router  = express.Router();
+
+const { firestore } = require('../firebase');
+const { todayBrazza } = require('../helpers/dates');
+const { checkEssai } = require('../helpers/essai');
+const { verifierImpactReservationsVehicule } = require('../helpers/reservations-impact');
+
+// ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
+function creerBatchAutoCommit(firestore, limite = 450) {
+  let batch = firestore.batch();
+  let count = 0;
+  const commits = [];
+
+  async function flushSiNecessaire() {
+    if (count >= limite) {
+      commits.push(batch.commit());
+      batch = firestore.batch();
+      count = 0;
+    }
+  }
+
+  return {
+    async set(ref, data) { batch.set(ref, data); count++; await flushSiNecessaire(); },
+    async update(ref, data) { batch.update(ref, data); count++; await flushSiNecessaire(); },
+    async delete(ref) { batch.delete(ref); count++; await flushSiNecessaire(); },
+    async commitFinal() {
+      if (count > 0) commits.push(batch.commit());
+      await Promise.all(commits);
+    },
+  };
+}
+
+// ════════════════════════════════
+//  CRÉER UN VÉHICULE
+//  POST /vehicule/create
+// ════════════════════════════════
+router.post('/create', checkEssai, async (req, res) => {
+  const { agenceId, nom, type, capacite } = req.body;
+  if (!agenceId || !nom || !type || !capacite) {
+    return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+  }
+  try {
+    const ref = firestore.collection('vehicules').doc();
+    const vehiculeData = {
+      id: ref.id, agenceId, nom, type,
+      capacite: parseInt(capacite),
+      actif: true,
+      createdAt: new Date().toISOString(),
+    };
+    await ref.set(vehiculeData);
+    return res.status(201).json({ message: 'Véhicule créé.', vehicule: vehiculeData });
+  } catch (err) {
+    console.error('Erreur création véhicule :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  RÉCUPÉRER LES VÉHICULES D'UNE AGENCE
+//  GET /vehicules?agenceId=xxx
+// ════════════════════════════════
+router.get('/all', async (req, res) => {
+  const { agenceId } = req.query;
+  if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
+  try {
+    const snapshot = await firestore.collection('vehicules')
+      .where('agenceId', '==', agenceId).orderBy('createdAt', 'desc').get();
+    return res.status(200).json({ vehicules: snapshot.docs.map(d => d.data()) });
+  } catch (err) {
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  RÉCUPÉRER UN VÉHICULE PAR ID
+//  GET /vehicule/:vehiculeId
+// ════════════════════════════════
+router.get('/:vehiculeId', async (req, res) => {
+  try {
+    const doc = await firestore.collection('vehicules').doc(req.params.vehiculeId).get();
+    if (!doc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    return res.status(200).json(doc.data());
+  } catch (err) {
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  MODIFIER UN VÉHICULE — propage à tous les bus liés
+//  PATCH /vehicule/:vehiculeId
+// ════════════════════════════════
+router.patch('/:vehiculeId', async (req, res) => {
+  const { vehiculeId } = req.params;
+  const { nom, type, capacite } = req.body;
+  if (!nom || !type || !capacite) {
+    return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+  }
+  try {
+    const updateData = { nom, type, capacite: parseInt(capacite), updatedAt: new Date().toISOString() };
+    await firestore.collection('vehicules').doc(vehiculeId).update(updateData);
+
+    const departsSnap = await firestore.collection('departs').where('vehiculeId', '==', vehiculeId).get();
+    const today = todayBrazza()
+    const batch = creerBatchAutoCommit(firestore);
+
+    for (const departDoc of departsSnap.docs) {
+      await batch.update(departDoc.ref, {
+        busNom: nom, busType: type, busCapacite: parseInt(capacite),
+        updatedAt: new Date().toISOString(),
+      });
+      const sessionsSnap = await firestore.collection('sessions')
+        .where('departId', '==', departDoc.id).where('date', '>=', today).get();
+      for (const sDoc of sessionsSnap.docs) {
+        const s = sDoc.data();
+        if (s.statut === 'annulée') continue;
+        await batch.update(sDoc.ref, {
+          busNom: nom,
+          placesTotal: parseInt(capacite),
+          placesRestantes: Math.max(0, parseInt(capacite) - (s.placesVendues || 0)),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+    await batch.commitFinal();
+    return res.status(200).json({ message: 'Véhicule mis à jour sur tous ses trajets.', vehicule: updateData });
+  } catch (err) {
+    console.error('Erreur update véhicule :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  STATUT — cascade sur TOUS les trajets
+//  PATCH /vehicule/:vehiculeId/statut
+// ════════════════════════════════
+router.patch('/:vehiculeId/statut', async (req, res) => {
+  const { vehiculeId } = req.params;
+  const { actif } = req.body;
+  if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
+
+  try {
+    const today = todayBrazza();
+
+    if (actif === false) {
+      const blocage = await verifierImpactReservationsVehicule(vehiculeId, today);
+      if (blocage.sessions.length > 0) {
+        return res.status(409).json({
+          code: 'RESA_BLOQUANTES',
+          message: `Ce bus a ${blocage.totalReservations} réservation(s) future(s) sur ${blocage.sessions.length} session(s), réparties sur plusieurs trajets. Choisissez une action avant de continuer.`,
+          sessions: blocage.sessions,
+        });
+      }
+    }
+
+    await firestore.collection('vehicules').doc(vehiculeId).update({ actif, updatedAt: new Date().toISOString() });
+    const departsSnap = await firestore.collection('departs').where('vehiculeId', '==', vehiculeId).get();
+    let departsAffectes = 0, sessionsSupprimees = 0;
+    const batch = creerBatchAutoCommit(firestore);
+
+    for (const departDoc of departsSnap.docs) {
+      await batch.update(departDoc.ref, { actif, updatedAt: new Date().toISOString() });
+      departsAffectes++;
+      if (actif === false) {
+        const sessionsSnap = await firestore.collection('sessions')
+          .where('departId', '==', departDoc.id).where('date', '>=', today).get();
+        for (const sDoc of sessionsSnap.docs) {
+          if (sDoc.data().statut !== 'annulée') { await batch.delete(sDoc.ref); sessionsSupprimees++; }
+        }
+      }
+    }
+    await batch.commitFinal();
+
+    return res.status(200).json({
+      message: actif
+        ? `Véhicule réactivé sur ${departsAffectes} trajet(s).`
+        : `Véhicule désactivé sur ${departsAffectes} trajet(s). ${sessionsSupprimees} session(s) future(s) supprimée(s).`,
+      departsAffectes, sessionsSupprimees,
+    });
+  } catch (err) {
+    console.error('Erreur statut véhicule :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  SUPPRIMER UN VÉHICULE — cascade sur TOUS les trajets
+//  DELETE /vehicule/:vehiculeId
+// ════════════════════════════════
+router.delete('/:vehiculeId', async (req, res) => {
+  const { vehiculeId } = req.params;
+  try {
+    const today = todayBrazza();
+
+    const blocage = await verifierImpactReservationsVehicule(vehiculeId, today);
+    if (blocage.sessions.length > 0) {
+      return res.status(409).json({
+        code: 'RESA_BLOQUANTES',
+        message: `Ce bus a ${blocage.totalReservations} réservation(s) future(s) sur ${blocage.sessions.length} session(s), réparties sur plusieurs trajets. Choisissez une action avant de continuer.`,
+        sessions: blocage.sessions,
+      });
+    }
+
+    const departsSnap = await firestore.collection('departs').where('vehiculeId', '==', vehiculeId).get();
+    let futuresSupprimees = 0, passeesArchivees = 0;
+    const batch = creerBatchAutoCommit(firestore);
+
+    for (const departDoc of departsSnap.docs) {
+      const depart = departDoc.data();
+      const sessionsSnap = await firestore.collection('sessions').where('departId', '==', departDoc.id).get();
+
+      for (const sDoc of sessionsSnap.docs) {
+        const s = sDoc.data();
+        if (s.date >= today && s.statut !== 'annulée') {
+          await batch.delete(sDoc.ref);
+          futuresSupprimees++;
+        } else {
+          await batch.update(sDoc.ref, {
+            departSupprime: true, departNom: depart.busNom,
+            archivedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          });
+          passeesArchivees++;
+        }
+      }
+      await batch.delete(departDoc.ref);
+    }
+    await batch.delete(firestore.collection('vehicules').doc(vehiculeId));
+    await batch.commitFinal();
+
+    return res.status(200).json({
+      message: `Véhicule supprimé de ${departsSnap.size} trajet(s). ${futuresSupprimees} session(s) future(s) supprimée(s), ${passeesArchivees} conservée(s) dans l'historique.`,
+      futuresSupprimees, passeesArchivees,
+    });
+  } catch (err) {
+    console.error('Erreur suppression véhicule :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+module.exports = router;

@@ -1,0 +1,8 @@
+# Clé privée Firebase — JAMAIS sur GitHub
+travio-clé.json
+
+# Variables d'environnement
+.env
+
+# Dépendances Node
+node_modules/
