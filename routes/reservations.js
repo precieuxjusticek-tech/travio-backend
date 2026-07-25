@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
@@ -241,6 +242,10 @@ router.patch('/:resaId/annuler', async (req, res) => {
     const r = doc.data();
     if (r.statut === 'annulée') return res.status(409).json({ message: 'Déjà annulée.' });
 
+    if (!(await essaiEstActif(r.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     if (pdvId && r.pdvId !== pdvId) {
       return res.status(403).json({ message: 'Vous ne pouvez pas annuler cette réservation.' });
     }
@@ -367,6 +372,10 @@ router.patch('/:resaId/retirer-passager', async (req, res) => {
 
     const r = doc.data();
     if (r.statut === 'annulée') return res.status(409).json({ message: 'Cette réservation est déjà annulée.' });
+
+    if (!(await essaiEstActif(r.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     if (r.dateDepart && r.heureDepart) {
       const departInstant = new Date(`${r.dateDepart}T${r.heureDepart}:00Z`).getTime() - OFFSET_MS;
@@ -531,6 +540,10 @@ router.patch('/:resaId', async (req, res) => {
       return res.status(409).json({ message: 'Impossible de modifier une réservation annulée.' });
     }
 
+    if (!(await essaiEstActif(r.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     if (r.dateDepart && r.heureDepart) {
       const departInstant = new Date(`${r.dateDepart}T${r.heureDepart}:00Z`).getTime() - OFFSET_MS;
       if (departInstant < Date.now()) {
@@ -672,6 +685,10 @@ router.patch('/:resaId/verifier-baisse', async (req, res) => {
   try {
     const doc = await firestore.collection('reservations').doc(resaId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Réservation introuvable.' });
+    const r = doc.data();
+    if (!(await essaiEstActif(r.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     await firestore.collection('reservations').doc(resaId).update({
       baisseNonVerifiee: false,

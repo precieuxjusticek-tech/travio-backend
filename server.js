@@ -6,7 +6,7 @@ const { auth, firestore } = require('./firebase');
 const { cloudinary, uploadToCloudinary } = require('./config/cloudinary');
 const { OFFSET_BRAZZA_MS, todayBrazza } = require('./helpers/dates');
 const { getSegmentsTrajet } = require('./helpers/segments');
-const { DUREE_ESSAI_JOURS, checkEssai, estAgenceExemptee } = require('./helpers/essai');
+const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +73,10 @@ cron.schedule('0 23 * * *', async () => {
     let total = 0;
 
     for (const depart of departs) {
+      // On saute les départs dont l'agence a un essai expiré
+      const actif = await essaiEstActif(depart.agenceId);
+      if (!actif) continue;
+
       // Appeler la logique existante de génération
       const res = await fetch(`http://localhost:${PORT}/depart/${depart.id}/generer-sessions`, {
         method: 'POST',

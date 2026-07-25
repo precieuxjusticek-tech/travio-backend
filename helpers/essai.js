@@ -25,10 +25,35 @@ function calculerDateFinEssai(dateDebut = new Date()) {
   return fin;
 }
 
+// Vérifie si l'essai d'une agence est actif (utilisable hors requête HTTP, ex: cron)
+async function essaiEstActif(agenceId) {
+  if (!agenceId) return false;
+  try {
+    const doc = await firestore.collection('agences').doc(agenceId).get();
+    if (!doc.exists) return false;
+
+    const data = doc.data();
+    if (await estAgenceExemptee(data.adminUid)) return true;
+
+    const essai = data.essai;
+    if (!essai || !essai.actif) return false;
+
+    if (essai.dateFin && new Date(essai.dateFin) < new Date()) {
+      await firestore.collection('agences').doc(agenceId).update({ 'essai.actif': false });
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Middleware — bloque les routes si l'essai de l'agence n'est plus actif
 const checkEssai = async (req, res, next) => {
   const agenceId = req.query.agenceId || req.body.agenceId || req.params.agenceId;
-  if (!agenceId) return next();
+  if (!agenceId) {
+    return res.status(400).json({ message: 'agenceId manquant.', code: 'AGENCE_ID_MANQUANT' });
+  }
   try {
     const doc = await firestore.collection('agences').doc(agenceId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Agence introuvable.' });
@@ -59,4 +84,5 @@ module.exports = {
   calculerDateFinEssai,
   checkEssai,
   estAgenceExemptee,
+  essaiEstActif,   // ← ajouté
 };

@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
@@ -39,6 +40,10 @@ router.delete('/session/:sessionId', async (req, res) => {
   try {
     const doc = await firestore.collection('sessions').doc(sessionId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Session introuvable.' });
+    const session = doc.data();
+    if (!(await essaiEstActif(session.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     await firestore.collection('sessions').doc(sessionId).delete();
     return res.status(200).json({ message: 'Session supprimée.' });
@@ -61,6 +66,9 @@ router.patch('/session/:sessionId', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Session introuvable.' });
 
     const session = doc.data();
+    if (!(await essaiEstActif(session.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
     if (session.statut === 'annulée') {
       return res.status(409).json({ message: 'Impossible de modifier une session annulée.' });
     }
@@ -104,6 +112,9 @@ router.patch('/session/:sessionId/incident', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Session introuvable.' });
 
     const session = doc.data();
+    if (!(await essaiEstActif(session.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
     if (session.statut === 'annulée') {
       return res.status(409).json({ message: 'Cette session est déjà annulée.' });
     }
@@ -188,6 +199,9 @@ router.post('/session/:sessionId/reaffecter', async (req, res) => {
     const sessionDocPre = await firestore.collection('sessions').doc(sessionId).get();
     if (!sessionDocPre.exists) return res.status(404).json({ message: 'Session introuvable.' });
     const sessionPre = sessionDocPre.data();
+    if (!(await essaiEstActif(sessionPre.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     if (nouveauDepart.trajetId !== sessionPre.trajetId) {
       return res.status(400).json({ message: 'Le bus cible n\'est pas sur le même trajet.' });
@@ -370,6 +384,9 @@ router.post('/session/:sessionId/annuler-toutes', async (req, res) => {
     const sessionDoc = await firestore.collection('sessions').doc(sessionId).get();
     if (!sessionDoc.exists) return res.status(404).json({ message: 'Session introuvable.' });
     const session = sessionDoc.data();
+    if (!(await essaiEstActif(session.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     const agenceDoc  = await firestore.collection('agences').doc(session.agenceId).get();
     const politique  = agenceDoc.exists ? agenceDoc.data().politiqueAnnulation : null;

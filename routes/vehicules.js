@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
@@ -97,6 +98,12 @@ router.patch('/:vehiculeId', async (req, res) => {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
   try {
+    const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
+    if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (!(await essaiEstActif(vDoc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const updateData = { nom, type, capacite: parseInt(capacite), updatedAt: new Date().toISOString() };
     await firestore.collection('vehicules').doc(vehiculeId).update(updateData);
 
@@ -140,6 +147,12 @@ router.patch('/:vehiculeId/statut', async (req, res) => {
   if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
 
   try {
+    const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
+    if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (!(await essaiEstActif(vDoc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const today = todayBrazza();
 
     if (actif === false) {
@@ -190,6 +203,12 @@ router.patch('/:vehiculeId/statut', async (req, res) => {
 router.delete('/:vehiculeId', async (req, res) => {
   const { vehiculeId } = req.params;
   try {
+    const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
+    if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (!(await essaiEstActif(vDoc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const today = todayBrazza();
 
     const blocage = await verifierImpactReservationsVehicule(vehiculeId, today);

@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { auth, firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
@@ -144,6 +145,10 @@ router.patch('/:pdvId', async (req, res) => {
 
     const { agentUid } = doc.data();
 
+    if (!(await essaiEstActif(doc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     if (agentUid && emailConnexion !== doc.data().emailConnexion) {
       await auth.updateUser(agentUid, { email: emailConnexion, displayName: responsable });
     }
@@ -181,6 +186,12 @@ router.patch('/:pdvId/statut', async (req, res) => {
   }
 
   try {
+    const docCheck = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!docCheck.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (!(await essaiEstActif(docCheck.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     await firestore.collection('pointsDeVente').doc(pdvId).update({ actif });
 
     const doc = await firestore.collection('pointsDeVente').doc(pdvId).get();
@@ -219,6 +230,10 @@ router.patch('/:pdvId/reset-password', async (req, res) => {
 
     const { agentUid } = doc.data();
 
+    if (!(await essaiEstActif(doc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     if (!agentUid) {
       return res.status(400).json({ message: 'Aucun agent associé à ce PDV.' });
     }
@@ -246,6 +261,12 @@ router.patch('/:pdvId/quota', async (req, res) => {
   }
 
   try {
+    const docCheck = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!docCheck.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (!(await essaiEstActif(docCheck.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     await firestore.collection('pointsDeVente').doc(pdvId).update({ quota });
 
     return res.status(200).json({ message: `Quota mis à jour : ${quota} places.` });
@@ -271,6 +292,10 @@ router.delete('/:pdvId', async (req, res) => {
     }
 
     const { agentUid } = doc.data();
+
+    if (!(await essaiEstActif(doc.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     if (agentUid) {
       try {

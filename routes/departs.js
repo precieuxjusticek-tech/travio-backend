@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
@@ -127,6 +128,9 @@ router.patch('/depart/:departId', async (req, res) => {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const ancienDepart = departDoc.data();
+    if (!(await essaiEstActif(ancienDepart.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     const joursChanges = JSON.stringify(ancienDepart.jours) !== JSON.stringify(jours) ||
                          ancienDepart.tousLesJours !== tousLesJours;
@@ -198,6 +202,9 @@ router.patch('/depart/:departId/statut', async (req, res) => {
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = departDoc.data();
     const today  = todayBrazza();
+    if (!(await essaiEstActif(depart.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     if (actif === false) {
       const blocage = await verifierImpactReservations(departId, depart.trajetId, today);
@@ -252,6 +259,9 @@ router.post('/depart/:departId/generer-sessions', async (req, res) => {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = departDoc.data();
+    if (!(await essaiEstActif(depart.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     const joursMap = { 'Dim': 0, 'Lun': 1, 'Mar': 2, 'Mer': 3, 'Jeu': 4, 'Ven': 5, 'Sam': 6 };
 
@@ -344,6 +354,9 @@ router.delete('/depart/:departId', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = doc.data();
     const today  = todayBrazza();
+    if (!(await essaiEstActif(depart.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
 
     const blocage = await verifierImpactReservations(departId, depart.trajetId, today);
     if (blocage.sessions.length > 0) {

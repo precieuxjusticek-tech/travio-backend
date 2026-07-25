@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const { essaiEstActif } = require('../helpers/essai');
 
 const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
@@ -120,6 +121,10 @@ router.delete('/:trajetId', async (req, res) => {
     const trajet  = trajetDoc.data();
     const today   = todayBrazza();
 
+    if (!(await essaiEstActif(trajet.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const blocage = await verifierImpactReservationsTrajet(trajetId, today);
     if (blocage.sessions.length > 0) {
       return res.status(409).json({
@@ -217,6 +222,12 @@ router.patch('/:trajetId', async (req, res) => {
   }
 
   try {
+    const trajetDocCheck = await firestore.collection('trajets').doc(trajetId).get();
+    if (!trajetDocCheck.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+    if (!(await essaiEstActif(trajetDocCheck.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const pdvArretsRecalc = arrets !== undefined
       ? arrets.filter(a => a.type === 'pdv').map(a => ({ id: a.id, nom: a.nom, ville: a.ville || '' }))
       : undefined;
@@ -334,6 +345,12 @@ router.patch('/:trajetId/statut', async (req, res) => {
   }
 
   try {
+    const trajetDocCheck = await firestore.collection('trajets').doc(trajetId).get();
+    if (!trajetDocCheck.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+    if (!(await essaiEstActif(trajetDocCheck.data().agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
     const today = todayBrazza();
 
     if (actif === false) {
