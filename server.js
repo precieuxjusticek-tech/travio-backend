@@ -31,6 +31,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '20mb' }));
+// ════════════════════════════════
+//  HEALTH CHECK
+// ════════════════════════════════
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', time: new Date().toISOString() });
+});
 app.use('/auth', require('./routes/auth'));
 app.use('/agence', require('./routes/agence'));
 app.use('/pdv', require('./routes/pdv'));
@@ -149,6 +155,19 @@ cron.schedule('0 0 * * *', async () => {
   }
 }, {
   timezone: 'Africa/Brazzaville'
+});
+
+// ════════════════════════════════
+//  CRON JOB — Auto-ping (garde le service éveillé sur Render)
+//  Toutes les 10 minutes
+// ════════════════════════════════
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    await fetch(`http://localhost:${PORT}/health`);
+    console.log('🏓 Auto-ping OK — service maintenu éveillé');
+  } catch (err) {
+    console.error('❌ Erreur auto-ping :', err.message);
+  }
 });
 
 // ── Démarrage du serveur ──
