@@ -7,6 +7,7 @@ const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservations } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -37,7 +38,7 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN DÉPART
 //  POST /trajet/:trajetId/depart/create
 // ════════════════════════════════
-router.post('/trajet/:trajetId/depart/create', verifierToken, checkEssai, async (req, res) => {
+router.post('/trajet/:trajetId/depart/create', verifierToken, verifierRole('admin'), checkEssai, async (req, res) => {
   const { trajetId } = req.params;
   const {
     agenceId, busNom, busType, busCapacite, heureDepart,
@@ -112,7 +113,7 @@ router.get('/trajet/:trajetId/departs', verifierToken, async (req, res) => {
 //  RÉCUPÉRER TOUS LES BUS D'UNE AGENCE
 //  GET /departs?agenceId=xxx
 // ════════════════════════════════
-router.get('/departs', verifierToken, async (req, res) => {
+router.get('/departs', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.query;
 
   if (req.user.agenceId !== agenceId) {
@@ -133,7 +134,7 @@ router.get('/departs', verifierToken, async (req, res) => {
 //  MODIFIER UN DÉPART
 //  PATCH /depart/:departId
 // ════════════════════════════════
-router.patch('/depart/:departId', verifierToken, async (req, res) => {
+router.patch('/depart/:departId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { departId } = req.params;
   const { busNom, busType, busCapacite, heureDepart, heureArrivee, dureeEstimee, tousLesJours, jours, arretsActifs } = req.body;
 
@@ -214,7 +215,7 @@ router.patch('/depart/:departId', verifierToken, async (req, res) => {
 //  STATUT D'UN DÉPART
 //  PATCH /depart/:departId/statut
 // ════════════════════════════════
-router.patch('/depart/:departId/statut', verifierToken, async (req, res) => {
+router.patch('/depart/:departId/statut', verifierToken, verifierRole('admin'), async (req, res) => {
   const { departId } = req.params;
   const { actif } = req.body;
 
@@ -279,7 +280,7 @@ router.patch('/depart/:departId/statut', verifierToken, async (req, res) => {
 //  GÉNÉRER LES SESSIONS AUTOMATIQUEMENT
 //  POST /depart/:departId/generer-sessions
 // ════════════════════════════════
-router.post('/depart/:departId/generer-sessions', verifierToken, async (req, res) => {
+router.post('/depart/:departId/generer-sessions', verifierToken, verifierRole('admin'), async (req, res) => {
   const { departId } = req.params;
   const { nbJours = 14 } = req.body;
 
@@ -379,7 +380,7 @@ router.post('/depart/:departId/generer-sessions', verifierToken, async (req, res
 //  SUPPRIMER UN DÉPART
 //  DELETE /depart/:departId
 // ════════════════════════════════
-router.delete('/depart/:departId', verifierToken, async (req, res) => {
+router.delete('/depart/:departId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { departId } = req.params;
 
   try {
@@ -449,7 +450,7 @@ router.delete('/depart/:departId', verifierToken, async (req, res) => {
 //  RÉCUPÉRER UN DÉPART PAR ID
 //  GET /depart/:departId
 // ════════════════════════════════
-router.get('/depart/:departId', verifierToken, async (req, res) => {
+router.get('/depart/:departId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { departId } = req.params;
   try {
     const doc = await firestore.collection('departs').doc(departId).get();

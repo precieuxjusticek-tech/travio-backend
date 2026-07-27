@@ -6,6 +6,7 @@ const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
 const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ════════════════════════════════
 //  SESSIONS D'UN DÉPART
@@ -42,7 +43,7 @@ router.get('/sessions', verifierToken, async (req, res) => {
 //  SUPPRIMER UNE SESSION
 //  DELETE /session/:sessionId
 // ════════════════════════════════
-router.delete('/session/:sessionId', verifierToken, async (req, res) => {
+router.delete('/session/:sessionId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   try {
     const doc = await firestore.collection('sessions').doc(sessionId).get();
@@ -67,7 +68,7 @@ router.delete('/session/:sessionId', verifierToken, async (req, res) => {
 //  MODIFIER UNE SESSION
 //  PATCH /session/:sessionId
 // ════════════════════════════════
-router.patch('/session/:sessionId', verifierToken, async (req, res) => {
+router.patch('/session/:sessionId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   const { arretsActifs, heureDepart, heureArrivee, dureeEstimee } = req.body;
 
@@ -111,7 +112,7 @@ router.patch('/session/:sessionId', verifierToken, async (req, res) => {
 //  SIGNALER UN INCIDENT
 //  PATCH /session/:sessionId/incident
 // ════════════════════════════════
-router.patch('/session/:sessionId/incident', verifierToken, async (req, res) => {
+router.patch('/session/:sessionId/incident', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   const { cause, details } = req.body;
 
@@ -155,7 +156,7 @@ router.patch('/session/:sessionId/incident', verifierToken, async (req, res) => 
 //  RÉSERVATIONS ACTIVES D'UNE SESSION
 //  GET /session/:sessionId/reservations
 // ════════════════════════════════
-router.get('/session/:sessionId/reservations', verifierToken, async (req, res) => {
+router.get('/session/:sessionId/reservations', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
 
   try {
@@ -204,7 +205,7 @@ router.get('/session/:sessionId/reservations', verifierToken, async (req, res) =
 //  RÉAFFECTER LES RÉSERVATIONS D'UNE SESSION
 //  POST /session/:sessionId/reaffecter
 // ════════════════════════════════
-router.post('/session/:sessionId/reaffecter', verifierToken, async (req, res) => {
+router.post('/session/:sessionId/reaffecter', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   const { nouveauDepartId } = req.body;
   if (!nouveauDepartId) return res.status(400).json({ message: 'nouveauDepartId manquant.' });
@@ -403,7 +404,7 @@ router.post('/session/:sessionId/reaffecter', verifierToken, async (req, res) =>
 //  ANNULER TOUTES LES RÉSERVATIONS D'UNE SESSION
 //  POST /session/:sessionId/annuler-toutes
 // ════════════════════════════════
-router.post('/session/:sessionId/annuler-toutes', verifierToken, async (req, res) => {
+router.post('/session/:sessionId/annuler-toutes', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   try {
     const sessionDoc = await firestore.collection('sessions').doc(sessionId).get();

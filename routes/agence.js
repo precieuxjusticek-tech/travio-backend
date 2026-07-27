@@ -5,6 +5,7 @@ const { firestore } = require('../firebase');
 const { cloudinary, uploadToCloudinary } = require('../config/cloudinary');
 const { calculerDateFinEssai, estAgenceExemptee } = require('../helpers/essai');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -155,7 +156,7 @@ router.get('/:agenceId', verifierToken, async (req, res) => {
 //  MODIFIER UNE AGENCE
 //  PATCH /agence/:agenceId
 // ════════════════════════════════
-router.patch('/:agenceId', verifierToken, async (req, res) => {
+router.patch('/:agenceId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.params;
 
   if (req.user.agenceId !== agenceId) {
@@ -201,7 +202,7 @@ router.patch('/:agenceId', verifierToken, async (req, res) => {
 //  MODIFIER LES IMAGES D'UNE AGENCE
 //  PATCH /agence/:agenceId/images
 // ════════════════════════════════
-router.patch('/:agenceId/images', verifierToken, async (req, res) => {
+router.patch('/:agenceId/images', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.params;
 
   if (req.user.agenceId !== agenceId) {
@@ -275,7 +276,7 @@ router.patch('/:agenceId/images', verifierToken, async (req, res) => {
 //  TYPES DE BILLETS
 //  PATCH /agence/:agenceId/types-billet
 // ════════════════════════════════
-router.patch('/:agenceId/types-billet', verifierToken, async (req, res) => {
+router.patch('/:agenceId/types-billet', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.params;
 
   if (req.user.agenceId !== agenceId) {
@@ -402,7 +403,7 @@ router.patch('/:agenceId/types-billet', verifierToken, async (req, res) => {
 //  CONFIGURATION DES BILLETS
 //  PATCH /agence/:agenceId/billet-config
 // ════════════════════════════════
-router.patch('/:agenceId/billet-config', verifierToken, async (req, res) => {
+router.patch('/:agenceId/billet-config', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.params;
 
   if (req.user.agenceId !== agenceId) {

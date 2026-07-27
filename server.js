@@ -13,8 +13,20 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Middlewares ──
+const allowedOrigins = [
+  'https://travio-vtk.netlify.app',
+  'http://127.0.0.1:5501',
+  'http://localhost:5501',
+];
+
 app.use(cors({
-  origin: ['https://travio-vtk.netlify.app'],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Non autorisé par CORS'));
+    }
+  },
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));

@@ -7,6 +7,7 @@ const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsTrajet } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -37,7 +38,7 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN TRAJET
 //  POST /trajet/create
 // ════════════════════════════════
-router.post('/create', verifierToken, checkEssai, async (req, res) => {
+router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (req, res) => {
   const {
     agenceId, villeDepart, villeArrivee, typeTrajet,
     arrets, pdvDepart, pdvArrivee, pdvArrets, prixAdulte,
@@ -87,7 +88,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 //  SUPPRIMER UN TRAJET
 //  DELETE /trajet/:trajetId
 // ════════════════════════════════
-router.delete('/:trajetId', verifierToken, async (req, res) => {
+router.delete('/:trajetId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { trajetId } = req.params;
 
   try {
@@ -190,7 +191,7 @@ router.delete('/:trajetId', verifierToken, async (req, res) => {
 //  MODIFIER UN TRAJET
 //  PATCH /trajet/:trajetId
 // ════════════════════════════════
-router.patch('/:trajetId', verifierToken, async (req, res) => {
+router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { trajetId } = req.params;
   const {
     prixParType,
@@ -277,7 +278,7 @@ router.patch('/:trajetId', verifierToken, async (req, res) => {
 //  STATS D'UN TRAJET
 //  GET /trajet/:trajetId/stats?dateDebut=&dateFin=
 // ════════════════════════════════
-router.get('/:trajetId/stats', verifierToken, async (req, res) => {
+router.get('/:trajetId/stats', verifierToken, verifierRole('admin'), async (req, res) => {
   const { trajetId } = req.params;
   const { dateDebut, dateFin } = req.query;
 
@@ -329,7 +330,7 @@ router.get('/:trajetId/stats', verifierToken, async (req, res) => {
 //  ACTIVER / DÉSACTIVER UN TRAJET
 //  PATCH /trajet/:trajetId/statut
 // ════════════════════════════════
-router.patch('/:trajetId/statut', verifierToken, async (req, res) => {
+router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (req, res) => {
   const { trajetId } = req.params;
   const { actif } = req.body;
 

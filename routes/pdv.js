@@ -5,12 +5,13 @@ const { essaiEstActif } = require('../helpers/essai');
 const { auth, firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ════════════════════════════════
 //  CRÉER UN PDV
 //  POST /pdv/create
 // ════════════════════════════════
-router.post('/create', verifierToken, checkEssai, async (req, res) => {
+router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (req, res) => {
   const {
     agenceId, ville, nom, adresse, telephone,
     responsable, emailContact, emailConnexion, password,
@@ -86,7 +87,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES PDV D'UNE AGENCE
 //  GET /pdv?agenceId=xxx
 // ════════════════════════════════
-router.get('/', verifierToken, async (req, res) => {
+router.get('/', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.query;
 
   if (req.user.agenceId !== agenceId) {
@@ -117,6 +118,7 @@ router.get('/', verifierToken, async (req, res) => {
 // ════════════════════════════════
 //  RÉCUPÉRER UN PDV PAR ID
 //  GET /pdv/:pdvId
+//  Accessible à l'admin (tous les PDV de son agence) et à l'agent (uniquement le sien)
 // ════════════════════════════════
 router.get('/:pdvId', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
@@ -132,6 +134,10 @@ router.get('/:pdvId', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
+    if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     return res.status(200).json(doc.data());
 
   } catch (error) {
@@ -144,7 +150,7 @@ router.get('/:pdvId', verifierToken, async (req, res) => {
 //  MODIFIER UN PDV
 //  PATCH /pdv/:pdvId
 // ════════════════════════════════
-router.patch('/:pdvId', verifierToken, async (req, res) => {
+router.patch('/:pdvId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId } = req.params;
   const { nom, ville, adresse, responsable, telephone, emailContact, emailConnexion } = req.body;
 
@@ -194,7 +200,7 @@ router.patch('/:pdvId', verifierToken, async (req, res) => {
 //  DÉSACTIVER / ACTIVER UN PDV
 //  PATCH /pdv/:pdvId/statut
 // ════════════════════════════════
-router.patch('/:pdvId/statut', verifierToken, async (req, res) => {
+router.patch('/:pdvId/statut', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId }  = req.params;
   const { actif }  = req.body;
 
@@ -235,7 +241,7 @@ router.patch('/:pdvId/statut', verifierToken, async (req, res) => {
 //  RÉINITIALISER LE MOT DE PASSE AGENT
 //  PATCH /pdv/:pdvId/reset-password
 // ════════════════════════════════
-router.patch('/:pdvId/reset-password', verifierToken, async (req, res) => {
+router.patch('/:pdvId/reset-password', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId }       = req.params;
   const { newPassword } = req.body;
 
@@ -278,7 +284,7 @@ router.patch('/:pdvId/reset-password', verifierToken, async (req, res) => {
 //  ASSIGNER UN QUOTA
 //  PATCH /pdv/:pdvId/quota
 // ════════════════════════════════
-router.patch('/:pdvId/quota', verifierToken, async (req, res) => {
+router.patch('/:pdvId/quota', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId } = req.params;
   const { quota } = req.body;
 
@@ -312,7 +318,7 @@ router.patch('/:pdvId/quota', verifierToken, async (req, res) => {
 //  SUPPRIMER UN PDV
 //  DELETE /pdv/:pdvId
 // ════════════════════════════════
-router.delete('/:pdvId', verifierToken, async (req, res) => {
+router.delete('/:pdvId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId } = req.params;
 
   try {
@@ -356,7 +362,7 @@ router.delete('/:pdvId', verifierToken, async (req, res) => {
 //  TRAJETS D'UN PDV
 //  GET /pdv/:pdvId/trajets
 // ════════════════════════════════
-router.get('/:pdvId/trajets', verifierToken, async (req, res) => {
+router.get('/:pdvId/trajets', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId } = req.query;
 
@@ -398,7 +404,7 @@ router.get('/:pdvId/trajets', verifierToken, async (req, res) => {
 //  PLACES DISPONIBLES AUJOURD'HUI POUR UN PDV
 //  GET /pdv/:pdvId/places-dispo?agenceId=xxx&date=2026-07-05
 // ════════════════════════════════
-router.get('/:pdvId/places-dispo', verifierToken, async (req, res) => {
+router.get('/:pdvId/places-dispo', verifierToken, verifierRole('admin'), async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId, date } = req.query;
 
@@ -478,6 +484,7 @@ router.get('/:pdvId/places-dispo', verifierToken, async (req, res) => {
 // ════════════════════════════════
 //  STATS D'UN PDV
 //  GET /pdv/:pdvId/stats?agenceId=xxx
+//  Accessible à l'admin (tous les PDV de son agence) et à l'agent (uniquement le sien)
 // ════════════════════════════════
 router.get('/:pdvId/stats', verifierToken, async (req, res) => {
   const { pdvId }    = req.params;
@@ -485,6 +492,10 @@ router.get('/:pdvId/stats', verifierToken, async (req, res) => {
 
   if (req.user.agenceId !== agenceId) {
     return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+    return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
   }
 
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });

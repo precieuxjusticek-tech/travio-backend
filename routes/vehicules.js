@@ -7,6 +7,7 @@ const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsVehicule } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -37,7 +38,7 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN VÉHICULE
 //  POST /vehicule/create
 // ════════════════════════════════
-router.post('/create', verifierToken, checkEssai, async (req, res) => {
+router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (req, res) => {
   const { nom, type, capacite } = req.body;
   const agenceId = req.user.agenceId;
   if (!agenceId || !nom || !type || !capacite) {
@@ -63,7 +64,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES VÉHICULES D'UNE AGENCE
 //  GET /vehicules?agenceId=xxx
 // ════════════════════════════════
-router.get('/all', verifierToken, async (req, res) => {
+router.get('/all', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.query;
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
   if (req.user.agenceId !== agenceId) {
@@ -82,7 +83,7 @@ router.get('/all', verifierToken, async (req, res) => {
 //  RÉCUPÉRER UN VÉHICULE PAR ID
 //  GET /vehicule/:vehiculeId
 // ════════════════════════════════
-router.get('/:vehiculeId', verifierToken, async (req, res) => {
+router.get('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res) => {
   try {
     const doc = await firestore.collection('vehicules').doc(req.params.vehiculeId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
@@ -99,7 +100,7 @@ router.get('/:vehiculeId', verifierToken, async (req, res) => {
 //  MODIFIER UN VÉHICULE — propage à tous les bus liés
 //  PATCH /vehicule/:vehiculeId
 // ════════════════════════════════
-router.patch('/:vehiculeId', verifierToken, async (req, res) => {
+router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { vehiculeId } = req.params;
   const { nom, type, capacite } = req.body;
   if (!nom || !type || !capacite) {
@@ -152,7 +153,7 @@ router.patch('/:vehiculeId', verifierToken, async (req, res) => {
 //  STATUT — cascade sur TOUS les trajets
 //  PATCH /vehicule/:vehiculeId/statut
 // ════════════════════════════════
-router.patch('/:vehiculeId/statut', verifierToken, async (req, res) => {
+router.patch('/:vehiculeId/statut', verifierToken, verifierRole('admin'), async (req, res) => {
   const { vehiculeId } = req.params;
   const { actif } = req.body;
   if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
@@ -214,7 +215,7 @@ router.patch('/:vehiculeId/statut', verifierToken, async (req, res) => {
 //  SUPPRIMER UN VÉHICULE — cascade sur TOUS les trajets
 //  DELETE /vehicule/:vehiculeId
 // ════════════════════════════════
-router.delete('/:vehiculeId', verifierToken, async (req, res) => {
+router.delete('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { vehiculeId } = req.params;
   try {
     const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();

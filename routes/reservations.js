@@ -6,6 +6,7 @@ const { firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
 const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
+const { verifierRole } = require('../middlewares/verifierRole');
 
 async function enrichirBusSupprime(reservations) {
   const sessionIds = [...new Set(reservations.map(r => r.sessionId).filter(Boolean))];
@@ -48,6 +49,10 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 
   if (req.user.agenceId !== agenceId) {
     return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+    return res.status(403).json({ message: 'Vous ne pouvez vendre que pour votre propre PDV.' });
   }
 
   if (!agenceId || !pdvId || !trajetId || !sessionId || !dateDepart || !prenomPassager || !prixTotal) {
@@ -187,6 +192,11 @@ router.get('/', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
+    // ← AJOUTER CE BLOC
+    if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const snapshot = await firestore
       .collection('reservations')
       .where('pdvId', '==', pdvId)
@@ -205,7 +215,7 @@ router.get('/', verifierToken, async (req, res) => {
 //  RÉCUPÉRER TOUTES LES RÉSERVATIONS D'UNE AGENCE
 //  GET /reservations/agence?agenceId=xxx
 // ════════════════════════════════
-router.get('/agence', verifierToken, async (req, res) => {
+router.get('/agence', verifierToken, verifierRole('admin'), async (req, res) => {
   const { agenceId } = req.query;
 
   if (!agenceId) {
@@ -257,7 +267,7 @@ router.patch('/:resaId/annuler', verifierToken, async (req, res) => {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
-    if (pdvId && r.pdvId !== pdvId) {
+    if (req.user.role === 'agent' && r.pdvId !== req.user.pdvId) {
       return res.status(403).json({ message: 'Vous ne pouvez pas annuler cette réservation.' });
     }
 
@@ -385,6 +395,11 @@ router.patch('/:resaId/retirer-passager', verifierToken, async (req, res) => {
     if (req.user.agenceId !== r.agenceId) {
       return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
     }
+
+    if (req.user.role === 'agent' && r.pdvId !== req.user.pdvId) {
+      return res.status(403).json({ message: 'Vous ne pouvez pas modifier cette réservation.' });
+    }
+
     if (r.statut === 'annulée') return res.status(409).json({ message: 'Cette réservation est déjà annulée.' });
 
     if (!(await essaiEstActif(r.agenceId))) {
@@ -553,6 +568,11 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
     if (req.user.agenceId !== r.agenceId) {
       return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
     }
+
+    if (req.user.role === 'agent' && r.pdvId !== req.user.pdvId) {
+      return res.status(403).json({ message: 'Vous ne pouvez pas modifier cette réservation.' });
+    }
+
     if (r.statut === 'annulée') {
       return res.status(409).json({ message: 'Impossible de modifier une réservation annulée.' });
     }
@@ -697,7 +717,7 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
 //  MARQUER UNE BAISSE COMME VÉRIFIÉE
 //  PATCH /reservations/:resaId/verifier-baisse
 // ════════════════════════════════
-router.patch('/:resaId/verifier-baisse', verifierToken, async (req, res) => {
+router.patch('/:resaId/verifier-baisse', verifierToken, verifierRole('admin'), async (req, res) => {
   const { resaId } = req.params;
   try {
     const doc = await firestore.collection('reservations').doc(resaId).get();
