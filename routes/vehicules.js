@@ -6,6 +6,7 @@ const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsVehicule } = require('../helpers/reservations-impact');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -36,8 +37,9 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN VÉHICULE
 //  POST /vehicule/create
 // ════════════════════════════════
-router.post('/create', checkEssai, async (req, res) => {
-  const { agenceId, nom, type, capacite } = req.body;
+router.post('/create', verifierToken, checkEssai, async (req, res) => {
+  const { nom, type, capacite } = req.body;
+  const agenceId = req.user.agenceId;
   if (!agenceId || !nom || !type || !capacite) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
@@ -61,9 +63,12 @@ router.post('/create', checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES VÉHICULES D'UNE AGENCE
 //  GET /vehicules?agenceId=xxx
 // ════════════════════════════════
-router.get('/all', async (req, res) => {
+router.get('/all', verifierToken, async (req, res) => {
   const { agenceId } = req.query;
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
   try {
     const snapshot = await firestore.collection('vehicules')
       .where('agenceId', '==', agenceId).orderBy('createdAt', 'desc').get();
@@ -77,10 +82,13 @@ router.get('/all', async (req, res) => {
 //  RÉCUPÉRER UN VÉHICULE PAR ID
 //  GET /vehicule/:vehiculeId
 // ════════════════════════════════
-router.get('/:vehiculeId', async (req, res) => {
+router.get('/:vehiculeId', verifierToken, async (req, res) => {
   try {
     const doc = await firestore.collection('vehicules').doc(req.params.vehiculeId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce véhicule.' });
+    }
     return res.status(200).json(doc.data());
   } catch (err) {
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -91,7 +99,7 @@ router.get('/:vehiculeId', async (req, res) => {
 //  MODIFIER UN VÉHICULE — propage à tous les bus liés
 //  PATCH /vehicule/:vehiculeId
 // ════════════════════════════════
-router.patch('/:vehiculeId', async (req, res) => {
+router.patch('/:vehiculeId', verifierToken, async (req, res) => {
   const { vehiculeId } = req.params;
   const { nom, type, capacite } = req.body;
   if (!nom || !type || !capacite) {
@@ -100,6 +108,9 @@ router.patch('/:vehiculeId', async (req, res) => {
   try {
     const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
     if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (req.user.agenceId !== vDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce véhicule.' });
+    }
     if (!(await essaiEstActif(vDoc.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -141,7 +152,7 @@ router.patch('/:vehiculeId', async (req, res) => {
 //  STATUT — cascade sur TOUS les trajets
 //  PATCH /vehicule/:vehiculeId/statut
 // ════════════════════════════════
-router.patch('/:vehiculeId/statut', async (req, res) => {
+router.patch('/:vehiculeId/statut', verifierToken, async (req, res) => {
   const { vehiculeId } = req.params;
   const { actif } = req.body;
   if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
@@ -149,6 +160,9 @@ router.patch('/:vehiculeId/statut', async (req, res) => {
   try {
     const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
     if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (req.user.agenceId !== vDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce véhicule.' });
+    }
     if (!(await essaiEstActif(vDoc.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -200,11 +214,14 @@ router.patch('/:vehiculeId/statut', async (req, res) => {
 //  SUPPRIMER UN VÉHICULE — cascade sur TOUS les trajets
 //  DELETE /vehicule/:vehiculeId
 // ════════════════════════════════
-router.delete('/:vehiculeId', async (req, res) => {
+router.delete('/:vehiculeId', verifierToken, async (req, res) => {
   const { vehiculeId } = req.params;
   try {
     const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
     if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
+    if (req.user.agenceId !== vDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce véhicule.' });
+    }
     if (!(await essaiEstActif(vDoc.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }

@@ -4,6 +4,7 @@ const router  = express.Router();
 const { firestore } = require('../firebase');
 const { cloudinary, uploadToCloudinary } = require('../config/cloudinary');
 const { calculerDateFinEssai, estAgenceExemptee } = require('../helpers/essai');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -34,9 +35,10 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UNE AGENCE
 //  POST /agence/create
 // ════════════════════════════════
-router.post('/create', async (req, res) => {
+router.post('/create', verifierToken, async (req, res) => {
+  const uid = req.user.uid;
   const {
-    uid, nom, ville, pays, adresse, telephone,
+    nom, ville, pays, adresse, telephone,
     slogan, description, histoire, anneeCreation,
     point1, point2, point3, engagements,
     logoBase64, photosBase64, regles, politiqueAnnulation,
@@ -121,8 +123,12 @@ router.post('/create', async (req, res) => {
 //  RÉCUPÉRER UNE AGENCE
 //  GET /agence/:agenceId
 // ════════════════════════════════
-router.get('/:agenceId', async (req, res) => {
+router.get('/:agenceId', verifierToken, async (req, res) => {
   const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!agenceId) {
     return res.status(400).json({ message: 'agenceId manquant.' });
@@ -149,8 +155,13 @@ router.get('/:agenceId', async (req, res) => {
 //  MODIFIER UNE AGENCE
 //  PATCH /agence/:agenceId
 // ════════════════════════════════
-router.patch('/:agenceId', async (req, res) => {
+router.patch('/:agenceId', verifierToken, async (req, res) => {
   const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   const {
     nom, slogan, description, histoire, ville, adresse,
     telephone, anneeCreation, point1, point2, point3,
@@ -190,8 +201,13 @@ router.patch('/:agenceId', async (req, res) => {
 //  MODIFIER LES IMAGES D'UNE AGENCE
 //  PATCH /agence/:agenceId/images
 // ════════════════════════════════
-router.patch('/:agenceId/images', async (req, res) => {
+router.patch('/:agenceId/images', verifierToken, async (req, res) => {
   const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   const { logoBase64, photosToAdd, photosToDelete } = req.body;
 
   try {
@@ -259,8 +275,13 @@ router.patch('/:agenceId/images', async (req, res) => {
 //  TYPES DE BILLETS
 //  PATCH /agence/:agenceId/types-billet
 // ════════════════════════════════
-router.patch('/:agenceId/types-billet', async (req, res) => {
+router.patch('/:agenceId/types-billet', verifierToken, async (req, res) => {
   const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   const { typesBillet } = req.body;
 
   if (!Array.isArray(typesBillet) || typesBillet.length === 0) {
@@ -381,8 +402,13 @@ router.patch('/:agenceId/types-billet', async (req, res) => {
 //  CONFIGURATION DES BILLETS
 //  PATCH /agence/:agenceId/billet-config
 // ════════════════════════════════
-router.patch('/:agenceId/billet-config', async (req, res) => {
+router.patch('/:agenceId/billet-config', verifierToken, async (req, res) => {
   const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   const { billetMode, billetDesign } = req.body;
 
   const modesValides = ['machine_a4a5', 'machine_thermique', 'manuel'];

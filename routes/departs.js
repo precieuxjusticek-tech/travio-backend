@@ -6,6 +6,7 @@ const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservations } = require('../helpers/reservations-impact');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -36,12 +37,16 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN DÉPART
 //  POST /trajet/:trajetId/depart/create
 // ════════════════════════════════
-router.post('/trajet/:trajetId/depart/create', checkEssai, async (req, res) => {
+router.post('/trajet/:trajetId/depart/create', verifierToken, checkEssai, async (req, res) => {
   const { trajetId } = req.params;
   const {
     agenceId, busNom, busType, busCapacite, heureDepart,
     heureArrivee, dureeEstimee, tousLesJours, jours, arretsActifs, vehiculeId
   } = req.body;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!busNom || !busType || !busCapacite || !heureDepart) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
@@ -86,9 +91,16 @@ router.post('/trajet/:trajetId/depart/create', checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES DÉPARTS D'UN TRAJET
 //  GET /trajet/:trajetId/departs
 // ════════════════════════════════
-router.get('/trajet/:trajetId/departs', async (req, res) => {
+router.get('/trajet/:trajetId/departs', verifierToken, async (req, res) => {
   const { trajetId } = req.params;
   try {
+    const trajetDoc = await firestore.collection('trajets').doc(trajetId).get();
+    if (!trajetDoc.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+
+    if (req.user.agenceId !== trajetDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce trajet.' });
+    }
+
     const snapshot = await firestore.collection('departs').where('trajetId', '==', trajetId).orderBy('heureDepart', 'asc').get();
     return res.status(200).json({ departs: snapshot.docs.map(d => d.data()) });
   } catch (err) {
@@ -100,8 +112,13 @@ router.get('/trajet/:trajetId/departs', async (req, res) => {
 //  RÉCUPÉRER TOUS LES BUS D'UNE AGENCE
 //  GET /departs?agenceId=xxx
 // ════════════════════════════════
-router.get('/departs', async (req, res) => {
+router.get('/departs', verifierToken, async (req, res) => {
   const { agenceId } = req.query;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
   try {
     const snapshot = await firestore.collection('departs').where('agenceId', '==', agenceId).get();
@@ -116,18 +133,23 @@ router.get('/departs', async (req, res) => {
 //  MODIFIER UN DÉPART
 //  PATCH /depart/:departId
 // ════════════════════════════════
-router.patch('/depart/:departId', async (req, res) => {
+router.patch('/depart/:departId', verifierToken, async (req, res) => {
   const { departId } = req.params;
   const { busNom, busType, busCapacite, heureDepart, heureArrivee, dureeEstimee, tousLesJours, jours, arretsActifs } = req.body;
-
-  if (!busNom || !busType || !busCapacite || !heureDepart) {
-    return res.status(400).json({ message: 'Champs obligatoires manquants.' });
-  }
 
   try {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const ancienDepart = departDoc.data();
+
+    if (req.user.agenceId !== ancienDepart.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce départ.' });
+    }
+
+    if (!busNom || !busType || !busCapacite || !heureDepart) {
+      return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+    }
+
     if (!(await essaiEstActif(ancienDepart.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -192,15 +214,21 @@ router.patch('/depart/:departId', async (req, res) => {
 //  STATUT D'UN DÉPART
 //  PATCH /depart/:departId/statut
 // ════════════════════════════════
-router.patch('/depart/:departId/statut', async (req, res) => {
+router.patch('/depart/:departId/statut', verifierToken, async (req, res) => {
   const { departId } = req.params;
   const { actif } = req.body;
-  if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
 
   try {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = departDoc.data();
+
+    if (req.user.agenceId !== depart.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce départ.' });
+    }
+
+    if (typeof actif !== 'boolean') return res.status(400).json({ message: 'actif doit être boolean.' });
+
     const today  = todayBrazza();
     if (!(await essaiEstActif(depart.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
@@ -251,7 +279,7 @@ router.patch('/depart/:departId/statut', async (req, res) => {
 //  GÉNÉRER LES SESSIONS AUTOMATIQUEMENT
 //  POST /depart/:departId/generer-sessions
 // ════════════════════════════════
-router.post('/depart/:departId/generer-sessions', async (req, res) => {
+router.post('/depart/:departId/generer-sessions', verifierToken, async (req, res) => {
   const { departId } = req.params;
   const { nbJours = 14 } = req.body;
 
@@ -259,6 +287,11 @@ router.post('/depart/:departId/generer-sessions', async (req, res) => {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = departDoc.data();
+
+    if (req.user.agenceId && req.user.agenceId !== depart.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce départ.' });
+    }
+
     if (!(await essaiEstActif(depart.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -346,13 +379,18 @@ router.post('/depart/:departId/generer-sessions', async (req, res) => {
 //  SUPPRIMER UN DÉPART
 //  DELETE /depart/:departId
 // ════════════════════════════════
-router.delete('/depart/:departId', async (req, res) => {
+router.delete('/depart/:departId', verifierToken, async (req, res) => {
   const { departId } = req.params;
 
   try {
     const doc = await firestore.collection('departs').doc(departId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
     const depart = doc.data();
+
+    if (req.user.agenceId !== depart.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce départ.' });
+    }
+
     const today  = todayBrazza();
     if (!(await essaiEstActif(depart.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
@@ -411,11 +449,16 @@ router.delete('/depart/:departId', async (req, res) => {
 //  RÉCUPÉRER UN DÉPART PAR ID
 //  GET /depart/:departId
 // ════════════════════════════════
-router.get('/depart/:departId', async (req, res) => {
+router.get('/depart/:departId', verifierToken, async (req, res) => {
   const { departId } = req.params;
   try {
     const doc = await firestore.collection('departs').doc(departId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
+
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce départ.' });
+    }
+
     return res.status(200).json(doc.data());
   } catch (err) {
     return res.status(500).json({ message: 'Erreur serveur.' });

@@ -50,7 +50,7 @@ async function essaiEstActif(agenceId) {
 
 // Middleware — bloque les routes si l'essai de l'agence n'est plus actif
 const checkEssai = async (req, res, next) => {
-  const agenceId = req.query.agenceId || req.body.agenceId || req.params.agenceId;
+  const agenceId = req.user?.agenceId;
   if (!agenceId) {
     return res.status(400).json({ message: 'agenceId manquant.', code: 'AGENCE_ID_MANQUANT' });
   }

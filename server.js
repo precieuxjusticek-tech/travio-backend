@@ -7,12 +7,13 @@ const { cloudinary, uploadToCloudinary } = require('./config/cloudinary');
 const { OFFSET_BRAZZA_MS, todayBrazza } = require('./helpers/dates');
 const { getSegmentsTrajet } = require('./helpers/segments');
 const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
+const { verifierToken } = require('./middlewares/verifierToken');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Middlewares ──
-app.use(cors());
+app.use(cors({ origin: ['https://ton-domaine.com', 'https://travio-backend-pa4q.onrender.com'] }));
 app.use(express.json({ limit: '20mb' }));
 app.use('/auth', require('./routes/auth'));
 app.use('/agence', require('./routes/agence'));
@@ -29,8 +30,8 @@ app.use('/admin', require('./routes/admin'));
 //  RÉCUPÉRER LES TRAJETS
 //  GET /trajets?agenceId=xxx
 // ════════════════════════════════
-app.get('/trajets', async (req, res) => {
-  const { agenceId } = req.query;
+app.get('/trajets', verifierToken, async (req, res) => {
+  const agenceId = req.user.agenceId;
 
   if (!agenceId) {
     return res.status(400).json({ message: 'agenceId manquant.' });
@@ -44,7 +45,6 @@ app.get('/trajets', async (req, res) => {
       .get();
 
     const trajets = snapshot.docs.map(doc => doc.data());
-
     return res.status(200).json({ trajets });
 
   } catch (err) {
@@ -80,7 +80,10 @@ cron.schedule('0 23 * * *', async () => {
       // Appeler la logique existante de génération
       const res = await fetch(`http://localhost:${PORT}/depart/${depart.id}/generer-sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-key': process.env.INTERNAL_CRON_KEY,
+        },
         body: JSON.stringify({ nbJours: 14 }),
       });
       const data = await res.json();

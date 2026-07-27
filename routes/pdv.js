@@ -4,16 +4,21 @@ const { essaiEstActif } = require('../helpers/essai');
 
 const { auth, firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 // ════════════════════════════════
 //  CRÉER UN PDV
 //  POST /pdv/create
 // ════════════════════════════════
-router.post('/create', checkEssai, async (req, res) => {
+router.post('/create', verifierToken, checkEssai, async (req, res) => {
   const {
     agenceId, ville, nom, adresse, telephone,
     responsable, emailContact, emailConnexion, password,
   } = req.body;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!agenceId || !ville || !nom || !adresse || !telephone || !responsable || !emailConnexion || !password) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
@@ -81,8 +86,12 @@ router.post('/create', checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES PDV D'UNE AGENCE
 //  GET /pdv?agenceId=xxx
 // ════════════════════════════════
-router.get('/', async (req, res) => {
+router.get('/', verifierToken, async (req, res) => {
   const { agenceId } = req.query;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!agenceId) {
     return res.status(400).json({ message: 'agenceId manquant.' });
@@ -109,7 +118,7 @@ router.get('/', async (req, res) => {
 //  RÉCUPÉRER UN PDV PAR ID
 //  GET /pdv/:pdvId
 // ════════════════════════════════
-router.get('/:pdvId', async (req, res) => {
+router.get('/:pdvId', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
 
   try {
@@ -117,6 +126,10 @@ router.get('/:pdvId', async (req, res) => {
 
     if (!doc.exists) {
       return res.status(404).json({ message: 'PDV introuvable.' });
+    }
+
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
     return res.status(200).json(doc.data());
@@ -131,17 +144,21 @@ router.get('/:pdvId', async (req, res) => {
 //  MODIFIER UN PDV
 //  PATCH /pdv/:pdvId
 // ════════════════════════════════
-router.patch('/:pdvId', async (req, res) => {
+router.patch('/:pdvId', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { nom, ville, adresse, responsable, telephone, emailContact, emailConnexion } = req.body;
-
-  if (!nom || !ville || !adresse || !responsable || !telephone || !emailConnexion) {
-    return res.status(400).json({ message: 'Champs obligatoires manquants.' });
-  }
 
   try {
     const doc = await firestore.collection('pointsDeVente').doc(pdvId).get();
     if (!doc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    if (!nom || !ville || !adresse || !responsable || !telephone || !emailConnexion) {
+      return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+    }
 
     const { agentUid } = doc.data();
 
@@ -177,17 +194,22 @@ router.patch('/:pdvId', async (req, res) => {
 //  DÉSACTIVER / ACTIVER UN PDV
 //  PATCH /pdv/:pdvId/statut
 // ════════════════════════════════
-router.patch('/:pdvId/statut', async (req, res) => {
+router.patch('/:pdvId/statut', verifierToken, async (req, res) => {
   const { pdvId }  = req.params;
   const { actif }  = req.body;
-
-  if (typeof actif !== 'boolean') {
-    return res.status(400).json({ message: 'Le champ actif doit être true ou false.' });
-  }
 
   try {
     const docCheck = await firestore.collection('pointsDeVente').doc(pdvId).get();
     if (!docCheck.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+
+    if (req.user.agenceId !== docCheck.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    if (typeof actif !== 'boolean') {
+      return res.status(400).json({ message: 'Le champ actif doit être true ou false.' });
+    }
+
     if (!(await essaiEstActif(docCheck.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -213,19 +235,23 @@ router.patch('/:pdvId/statut', async (req, res) => {
 //  RÉINITIALISER LE MOT DE PASSE AGENT
 //  PATCH /pdv/:pdvId/reset-password
 // ════════════════════════════════
-router.patch('/:pdvId/reset-password', async (req, res) => {
+router.patch('/:pdvId/reset-password', verifierToken, async (req, res) => {
   const { pdvId }       = req.params;
   const { newPassword } = req.body;
-
-  if (!newPassword || newPassword.length < 6) {
-    return res.status(400).json({ message: 'Mot de passe trop court (min. 6 caractères).' });
-  }
 
   try {
     const doc = await firestore.collection('pointsDeVente').doc(pdvId).get();
 
     if (!doc.exists) {
       return res.status(404).json({ message: 'PDV introuvable.' });
+    }
+
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Mot de passe trop court (min. 6 caractères).' });
     }
 
     const { agentUid } = doc.data();
@@ -252,17 +278,22 @@ router.patch('/:pdvId/reset-password', async (req, res) => {
 //  ASSIGNER UN QUOTA
 //  PATCH /pdv/:pdvId/quota
 // ════════════════════════════════
-router.patch('/:pdvId/quota', async (req, res) => {
+router.patch('/:pdvId/quota', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { quota } = req.body;
-
-  if (typeof quota !== 'number' || quota < 0) {
-    return res.status(400).json({ message: 'Quota invalide.' });
-  }
 
   try {
     const docCheck = await firestore.collection('pointsDeVente').doc(pdvId).get();
     if (!docCheck.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+
+    if (req.user.agenceId !== docCheck.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    if (typeof quota !== 'number' || quota < 0) {
+      return res.status(400).json({ message: 'Quota invalide.' });
+    }
+
     if (!(await essaiEstActif(docCheck.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -281,7 +312,7 @@ router.patch('/:pdvId/quota', async (req, res) => {
 //  SUPPRIMER UN PDV
 //  DELETE /pdv/:pdvId
 // ════════════════════════════════
-router.delete('/:pdvId', async (req, res) => {
+router.delete('/:pdvId', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
 
   try {
@@ -289,6 +320,10 @@ router.delete('/:pdvId', async (req, res) => {
 
     if (!doc.exists) {
       return res.status(404).json({ message: 'PDV introuvable.' });
+    }
+
+    if (req.user.agenceId !== doc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
     const { agentUid } = doc.data();
@@ -321,13 +356,23 @@ router.delete('/:pdvId', async (req, res) => {
 //  TRAJETS D'UN PDV
 //  GET /pdv/:pdvId/trajets
 // ════════════════════════════════
-router.get('/:pdvId/trajets', async (req, res) => {
+router.get('/:pdvId/trajets', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId } = req.query;
 
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
 
-  try {
+ try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (pdvDoc.data().agenceId !== req.user.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const snapshot = await firestore
       .collection('trajets')
       .where('agenceId', '==', agenceId)
@@ -353,15 +398,25 @@ router.get('/:pdvId/trajets', async (req, res) => {
 //  PLACES DISPONIBLES AUJOURD'HUI POUR UN PDV
 //  GET /pdv/:pdvId/places-dispo?agenceId=xxx&date=2026-07-05
 // ════════════════════════════════
-router.get('/:pdvId/places-dispo', async (req, res) => {
+router.get('/:pdvId/places-dispo', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId, date } = req.query;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!agenceId || !date) {
     return res.status(400).json({ message: 'agenceId et date obligatoires.' });
   }
 
   try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (pdvDoc.data().agenceId !== req.user.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const trajetsSnap = await firestore
       .collection('trajets')
       .where('agenceId', '==', agenceId)
@@ -424,13 +479,23 @@ router.get('/:pdvId/places-dispo', async (req, res) => {
 //  STATS D'UN PDV
 //  GET /pdv/:pdvId/stats?agenceId=xxx
 // ════════════════════════════════
-router.get('/:pdvId/stats', async (req, res) => {
+router.get('/:pdvId/stats', verifierToken, async (req, res) => {
   const { pdvId }    = req.params;
   const { agenceId, dateDebut, dateFin, trajetId } = req.query;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
 
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
 
   try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (pdvDoc.data().agenceId !== req.user.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const OFFSET_MS = 1 * 60 * 60 * 1000;
     const defautTodayStr  = new Date(Date.now() + OFFSET_MS).toISOString().split('T')[0];
     const defautIlYA30    = new Date(Date.now() + OFFSET_MS - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];

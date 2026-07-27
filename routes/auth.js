@@ -2,6 +2,7 @@ const express = require('express');
 const router  = express.Router();
 
 const { auth, firestore } = require('../firebase');
+const { verifierToken }   = require('../middlewares/verifierToken');
 
 // ════════════════════════════════
 //  INSCRIPTION
@@ -52,16 +53,11 @@ router.post('/register', async (req, res) => {
 //  CONNEXION
 //  POST /auth/login
 // ════════════════════════════════
-router.post('/login', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ message: 'Email manquant.' });
-  }
-
+router.post('/login', verifierToken, async (req, res) => {
   try {
-    const userRecord = await auth.getUserByEmail(email);
-    const userDoc = await firestore.collection('users').doc(userRecord.uid).get();
+    // req.user vient du token vérifié (uid, email, role, agenceId, pdvId)
+    // On va chercher prenom/nom qui ne sont pas dans req.user
+    const userDoc = await firestore.collection('users').doc(req.user.uid).get();
 
     if (!userDoc.exists) {
       return res.status(404).json({ message: 'Utilisateur introuvable.' });
@@ -71,7 +67,7 @@ router.post('/login', async (req, res) => {
 
     return res.status(200).json({
       message:  'Connexion réussie.',
-      uid:      userRecord.uid,
+      uid:      req.user.uid,
       prenom:   userData.prenom,
       nom:      userData.nom,
       role:     userData.role,
@@ -80,9 +76,6 @@ router.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    if (error.code === 'auth/user-not-found') {
-      return res.status(404).json({ message: 'Aucun compte trouvé avec cet email.' });
-    }
     console.error('Erreur connexion :', error);
     return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
   }
@@ -103,7 +96,7 @@ router.post('/forgot-password', async (req, res) => {
     await auth.getUserByEmail(email);
 
     return res.status(200).json({
-      message: 'Email vérifié. Envoi du lien en cours.',
+      message: 'Si cet email existe, un lien vous sera envoyé.',
     });
 
   } catch (error) {

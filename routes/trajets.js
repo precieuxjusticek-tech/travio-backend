@@ -6,6 +6,7 @@ const { firestore } = require('../firebase');
 const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsTrajet } = require('../helpers/reservations-impact');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 // ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
 function creerBatchAutoCommit(firestore, limite = 450) {
@@ -36,7 +37,7 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  CRÉER UN TRAJET
 //  POST /trajet/create
 // ════════════════════════════════
-router.post('/create', checkEssai, async (req, res) => {
+router.post('/create', verifierToken, checkEssai, async (req, res) => {
   const {
     agenceId, villeDepart, villeArrivee, typeTrajet,
     arrets, pdvDepart, pdvArrivee, pdvArrets, prixAdulte,
@@ -44,6 +45,10 @@ router.post('/create', checkEssai, async (req, res) => {
   } = req.body;
 
   const { prixParType } = req.body;
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   if (!agenceId || !villeDepart || !villeArrivee || !typeTrajet ||
     !prixParType || Object.keys(prixParType).length === 0) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
@@ -79,39 +84,10 @@ router.post('/create', checkEssai, async (req, res) => {
 });
 
 // ════════════════════════════════
-//  RÉCUPÉRER LES TRAJETS
-//  GET /trajets?agenceId=xxx
-//  (monté séparément à la racine — voir server.js)
-// ════════════════════════════════
-router.get('/all', async (req, res) => {
-  const { agenceId } = req.query;
-
-  if (!agenceId) {
-    return res.status(400).json({ message: 'agenceId manquant.' });
-  }
-
-  try {
-    const snapshot = await firestore
-      .collection('trajets')
-      .where('agenceId', '==', agenceId)
-      .orderBy('createdAt', 'desc')
-      .get();
-
-    const trajets = snapshot.docs.map(doc => doc.data());
-
-    return res.status(200).json({ trajets });
-
-  } catch (err) {
-    console.error('Erreur récupération trajets :', err);
-    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
-  }
-});
-
-// ════════════════════════════════
 //  SUPPRIMER UN TRAJET
 //  DELETE /trajet/:trajetId
 // ════════════════════════════════
-router.delete('/:trajetId', async (req, res) => {
+router.delete('/:trajetId', verifierToken, async (req, res) => {
   const { trajetId } = req.params;
 
   try {
@@ -119,6 +95,11 @@ router.delete('/:trajetId', async (req, res) => {
     if (!trajetDoc.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
 
     const trajet  = trajetDoc.data();
+
+    if (req.user.agenceId !== trajet.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce trajet.' });
+    }
+
     const today   = todayBrazza();
 
     if (!(await essaiEstActif(trajet.agenceId))) {
@@ -209,7 +190,7 @@ router.delete('/:trajetId', async (req, res) => {
 //  MODIFIER UN TRAJET
 //  PATCH /trajet/:trajetId
 // ════════════════════════════════
-router.patch('/:trajetId', async (req, res) => {
+router.patch('/:trajetId', verifierToken, async (req, res) => {
   const { trajetId } = req.params;
   const {
     prixParType,
@@ -217,13 +198,18 @@ router.patch('/:trajetId', async (req, res) => {
     arrets,
   } = req.body;
 
-  if (!prixParType || Object.keys(prixParType).length === 0) {
-    return res.status(400).json({ message: 'Champs obligatoires manquants.' });
-  }
-
   try {
     const trajetDocCheck = await firestore.collection('trajets').doc(trajetId).get();
     if (!trajetDocCheck.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+
+    if (req.user.agenceId !== trajetDocCheck.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce trajet.' });
+    }
+
+    if (!prixParType || Object.keys(prixParType).length === 0) {
+      return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+    }
+
     if (!(await essaiEstActif(trajetDocCheck.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
@@ -291,7 +277,7 @@ router.patch('/:trajetId', async (req, res) => {
 //  STATS D'UN TRAJET
 //  GET /trajet/:trajetId/stats?dateDebut=&dateFin=
 // ════════════════════════════════
-router.get('/:trajetId/stats', async (req, res) => {
+router.get('/:trajetId/stats', verifierToken, async (req, res) => {
   const { trajetId } = req.params;
   const { dateDebut, dateFin } = req.query;
 
@@ -302,6 +288,13 @@ router.get('/:trajetId/stats', async (req, res) => {
   const fin   = dateFin   || defautFin;
 
   try {
+    const trajetDoc = await firestore.collection('trajets').doc(trajetId).get();
+    if (!trajetDoc.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+
+    if (req.user.agenceId !== trajetDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce trajet.' });
+    }
+
     const departsSnap = await firestore.collection('departs').where('trajetId', '==', trajetId).get();
     const departs = departsSnap.docs.map(d => d.data());
 
@@ -336,17 +329,22 @@ router.get('/:trajetId/stats', async (req, res) => {
 //  ACTIVER / DÉSACTIVER UN TRAJET
 //  PATCH /trajet/:trajetId/statut
 // ════════════════════════════════
-router.patch('/:trajetId/statut', async (req, res) => {
+router.patch('/:trajetId/statut', verifierToken, async (req, res) => {
   const { trajetId } = req.params;
   const { actif } = req.body;
-
-  if (typeof actif !== 'boolean') {
-    return res.status(400).json({ message: 'Le champ actif doit être true ou false.' });
-  }
 
   try {
     const trajetDocCheck = await firestore.collection('trajets').doc(trajetId).get();
     if (!trajetDocCheck.exists) return res.status(404).json({ message: 'Trajet introuvable.' });
+
+    if (req.user.agenceId !== trajetDocCheck.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce trajet.' });
+    }
+
+    if (typeof actif !== 'boolean') {
+      return res.status(400).json({ message: 'Le champ actif doit être true ou false.' });
+    }
+
     if (!(await essaiEstActif(trajetDocCheck.data().agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }

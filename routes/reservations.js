@@ -5,6 +5,7 @@ const { essaiEstActif } = require('../helpers/essai');
 const { firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
 const { getSegmentsTrajet } = require('../helpers/segments');
+const { verifierToken } = require('../middlewares/verifierToken');
 
 async function enrichirBusSupprime(reservations) {
   const sessionIds = [...new Set(reservations.map(r => r.sessionId).filter(Boolean))];
@@ -35,7 +36,7 @@ async function enrichirBusSupprime(reservations) {
 //  CRÉER UNE RÉSERVATION (VENTE PDV)
 //  POST /reservations/create
 // ════════════════════════════════
-router.post('/create', checkEssai, async (req, res) => {
+router.post('/create', verifierToken, checkEssai, async (req, res) => {
   const {
     agenceId, pdvId, trajetId, sessionId,
     typeTrajet, routeLabel, heureDepart, dateDepart,
@@ -45,11 +46,21 @@ router.post('/create', checkEssai, async (req, res) => {
     passagers, nbPassagers, prixTotal, remarques,
   } = req.body;
 
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
   if (!agenceId || !pdvId || !trajetId || !sessionId || !dateDepart || !prenomPassager || !prixTotal) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
 
   try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (req.user.agenceId !== pdvDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const trajetDoc = await firestore.collection('trajets').doc(trajetId).get();
     if (!trajetDoc.exists) {
       return res.status(404).json({ message: 'Trajet introuvable.' });
@@ -148,15 +159,6 @@ router.post('/create', checkEssai, async (req, res) => {
       throw txErr;
     }
 
-    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
-    if (pdvDoc.exists) {
-      const vendusActuels = pdvDoc.data().vendus || 0;
-      await firestore.collection('pointsDeVente').doc(pdvId).update({
-        vendus: vendusActuels + nbBillets,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-
     return res.status(201).json({
       message:       'Réservation créée avec succès.',
       reservationId: resaId,
@@ -173,14 +175,18 @@ router.post('/create', checkEssai, async (req, res) => {
 //  RÉCUPÉRER LES RÉSERVATIONS D'UN PDV
 //  GET /reservations?pdvId=xxx
 // ════════════════════════════════
-router.get('/', async (req, res) => {
+router.get('/', verifierToken, async (req, res) => {
   const { pdvId } = req.query;
-
   if (!pdvId) {
     return res.status(400).json({ message: 'pdvId manquant.' });
   }
-
   try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (req.user.agenceId !== pdvDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
     const snapshot = await firestore
       .collection('reservations')
       .where('pdvId', '==', pdvId)
@@ -188,9 +194,7 @@ router.get('/', async (req, res) => {
       .get();
 
     const reservations = snapshot.docs.map(doc => doc.data());
-
     return res.status(200).json({ reservations });
-
   } catch (err) {
     console.error('Erreur récupération réservations :', err);
     return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
@@ -201,11 +205,15 @@ router.get('/', async (req, res) => {
 //  RÉCUPÉRER TOUTES LES RÉSERVATIONS D'UNE AGENCE
 //  GET /reservations/agence?agenceId=xxx
 // ════════════════════════════════
-router.get('/agence', async (req, res) => {
+router.get('/agence', verifierToken, async (req, res) => {
   const { agenceId } = req.query;
 
   if (!agenceId) {
     return res.status(400).json({ message: 'agenceId manquant.' });
+  }
+  
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
   }
 
   try {
@@ -230,7 +238,7 @@ router.get('/agence', async (req, res) => {
 //  ANNULATION D'UN BILLET
 //  PATCH /reservations/:resaId/annuler
 // ════════════════════════════════
-router.patch('/:resaId/annuler', async (req, res) => {
+router.patch('/:resaId/annuler', verifierToken, async (req, res) => {
   const { resaId } = req.params;
   const { pdvId }  = req.body;
   const OFFSET_MS  = 1 * 60 * 60 * 1000;
@@ -240,6 +248,9 @@ router.patch('/:resaId/annuler', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Réservation introuvable.' });
 
     const r = doc.data();
+    if (req.user.agenceId !== r.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
+    }
     if (r.statut === 'annulée') return res.status(409).json({ message: 'Déjà annulée.' });
 
     if (!(await essaiEstActif(r.agenceId))) {
@@ -357,7 +368,7 @@ router.patch('/:resaId/annuler', async (req, res) => {
 //  RETIRER UN PASSAGER
 //  PATCH /reservations/:resaId/retirer-passager
 // ════════════════════════════════
-router.patch('/:resaId/retirer-passager', async (req, res) => {
+router.patch('/:resaId/retirer-passager', verifierToken, async (req, res) => {
   const { resaId } = req.params;
   const { passagerIndex } = req.body;
   const OFFSET_MS = 1 * 60 * 60 * 1000;
@@ -371,6 +382,9 @@ router.patch('/:resaId/retirer-passager', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Réservation introuvable.' });
 
     const r = doc.data();
+    if (req.user.agenceId !== r.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
+    }
     if (r.statut === 'annulée') return res.status(409).json({ message: 'Cette réservation est déjà annulée.' });
 
     if (!(await essaiEstActif(r.agenceId))) {
@@ -514,7 +528,7 @@ router.patch('/:resaId/retirer-passager', async (req, res) => {
 //  MODIFICATION D'UN BILLET
 //  PATCH /reservations/:resaId
 // ════════════════════════════════
-router.patch('/:resaId', async (req, res) => {
+router.patch('/:resaId', verifierToken, async (req, res) => {
   const { resaId } = req.params;
   const {
     prenomPassager, nomPassager, telephonePassager,
@@ -536,6 +550,9 @@ router.patch('/:resaId', async (req, res) => {
     if (!doc.exists) return res.status(404).json({ message: 'Réservation introuvable.' });
 
     const r = doc.data();
+    if (req.user.agenceId !== r.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
+    }
     if (r.statut === 'annulée') {
       return res.status(409).json({ message: 'Impossible de modifier une réservation annulée.' });
     }
@@ -680,12 +697,15 @@ router.patch('/:resaId', async (req, res) => {
 //  MARQUER UNE BAISSE COMME VÉRIFIÉE
 //  PATCH /reservations/:resaId/verifier-baisse
 // ════════════════════════════════
-router.patch('/:resaId/verifier-baisse', async (req, res) => {
+router.patch('/:resaId/verifier-baisse', verifierToken, async (req, res) => {
   const { resaId } = req.params;
   try {
     const doc = await firestore.collection('reservations').doc(resaId).get();
     if (!doc.exists) return res.status(404).json({ message: 'Réservation introuvable.' });
     const r = doc.data();
+    if (req.user.agenceId !== r.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à cette réservation.' });
+    }
     if (!(await essaiEstActif(r.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }

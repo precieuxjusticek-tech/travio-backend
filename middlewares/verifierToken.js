@@ -16,7 +16,7 @@ async function verifierToken(req, res, next) {
   const idToken = authHeader.split('Bearer ')[1];
 
   try {
-    const decoded = await auth.verifyIdToken(idToken);
+    const decoded = await auth.verifyIdToken(idToken, true);
 
     const userDoc = await firestore.collection('users').doc(decoded.uid).get();
     if (!userDoc.exists) {
