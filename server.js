@@ -13,7 +13,11 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Middlewares ──
-app.use(cors({ origin: ['https://ton-domaine.com', 'https://travio-backend-pa4q.onrender.com'] }));
+app.use(cors({
+  origin: ['https://travio-vtk.netlify.app'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '20mb' }));
 app.use('/auth', require('./routes/auth'));
 app.use('/agence', require('./routes/agence'));
