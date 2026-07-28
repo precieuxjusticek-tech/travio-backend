@@ -9,8 +9,10 @@ const { getSegmentsTrajet } = require('./helpers/segments');
 const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
 const { verifierToken } = require('./middlewares/verifierToken');
 
-const app  = express();
+const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.set('trust proxy', 1);
 
 // ── Middlewares ──
 const allowedOrigins = [

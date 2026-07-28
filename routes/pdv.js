@@ -6,6 +6,15 @@ const { auth, firestore } = require('../firebase');
 const { checkEssai } = require('../helpers/essai');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
+const { encrypt, decrypt } = require('../helpers/crypto');
+
+const rateLimit = require('express-rate-limit');
+
+const revealPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { message: 'Trop de tentatives, réessayez plus tard.' },
+});
 
 // ════════════════════════════════
 //  CRÉER UN PDV
@@ -49,7 +58,7 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
       responsable,
       emailContact:   emailContact   || null,
       emailConnexion,
-      password: password,
+      password: encrypt(password),
       agentUid:       userRecord.uid,
       quota:          0,
       vendus:         0,
@@ -69,9 +78,11 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
       createdAt: new Date().toISOString(),
     });
 
+    const { password: _pw, ...pdvSansPassword } = pdvData;
+
     return res.status(201).json({
       message: 'Point de vente créé avec succès.',
-      pdv:     pdvData,
+      pdv:     pdvSansPassword,
     });
 
   } catch (error) {
@@ -105,7 +116,11 @@ router.get('/', verifierToken, verifierRole('admin'), async (req, res) => {
       .orderBy('createdAt', 'desc')
       .get();
 
-    const pdvs = snapshot.docs.map(doc => doc.data());
+    const pdvs = snapshot.docs.map(doc => {
+      const d = doc.data();
+      delete d.password;
+      return d;
+    });
 
     return res.status(200).json({ pdvs });
 
@@ -138,7 +153,9 @@ router.get('/:pdvId', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
-    return res.status(200).json(doc.data());
+    const pdvData = doc.data();
+    delete pdvData.password;
+    return res.status(200).json(pdvData);
 
   } catch (error) {
     console.error('Erreur récupération PDV :', error);
@@ -238,6 +255,44 @@ router.patch('/:pdvId/statut', verifierToken, verifierRole('admin'), async (req,
 });
 
 // ════════════════════════════════
+//  RÉVÉLER LE MOT DE PASSE D'UN PDV
+//  POST /pdv/:pdvId/reveal-password
+// ════════════════════════════════
+router.post('/:pdvId/reveal-password', verifierToken, verifierRole('admin'), revealPasswordLimiter, async (req, res) => {
+  const { pdvId } = req.params;
+
+  try {
+    const doc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!doc.exists) {
+      return res.status(404).json({ message: 'PDV introuvable.' });
+    }
+
+    const pdvData = doc.data();
+
+    if (req.user.agenceId !== pdvData.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    await firestore.collection('auditLogs').add({
+      type:      'reveal_pdv_password',
+      pdvId,
+      pdvNom:    pdvData.nom || null,
+      adminUid:  req.user.uid,
+      agenceId:  req.user.agenceId,
+      timestamp: new Date().toISOString(),
+    });
+
+    const password = pdvData.password ? decrypt(pdvData.password) : null;
+
+    return res.status(200).json({ password });
+
+  } catch (error) {
+    console.error('Erreur reveal password PDV :', error);
+    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
+  }
+});
+
+// ════════════════════════════════
 //  RÉINITIALISER LE MOT DE PASSE AGENT
 //  PATCH /pdv/:pdvId/reset-password
 // ════════════════════════════════
@@ -271,6 +326,11 @@ router.patch('/:pdvId/reset-password', verifierToken, verifierRole('admin'), asy
     }
 
     await auth.updateUser(agentUid, { password: newPassword });
+
+    await firestore.collection('pointsDeVente').doc(pdvId).update({
+      password: encrypt(newPassword),
+      updatedAt: new Date().toISOString(),
+    });
 
     return res.status(200).json({ message: 'Mot de passe réinitialisé avec succès.' });
 
@@ -362,12 +422,16 @@ router.delete('/:pdvId', verifierToken, verifierRole('admin'), async (req, res) 
 //  TRAJETS D'UN PDV
 //  GET /pdv/:pdvId/trajets
 // ════════════════════════════════
-router.get('/:pdvId/trajets', verifierToken, verifierRole('admin'), async (req, res) => {
+router.get('/:pdvId/trajets', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId } = req.query;
 
   if (req.user.agenceId !== agenceId) {
     return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+    return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
   }
 
   if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
@@ -404,12 +468,16 @@ router.get('/:pdvId/trajets', verifierToken, verifierRole('admin'), async (req, 
 //  PLACES DISPONIBLES AUJOURD'HUI POUR UN PDV
 //  GET /pdv/:pdvId/places-dispo?agenceId=xxx&date=2026-07-05
 // ════════════════════════════════
-router.get('/:pdvId/places-dispo', verifierToken, verifierRole('admin'), async (req, res) => {
+router.get('/:pdvId/places-dispo', verifierToken, async (req, res) => {
   const { pdvId } = req.params;
   const { agenceId, date } = req.query;
 
   if (req.user.agenceId !== agenceId) {
     return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+    return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
   }
 
   if (!agenceId || !date) {

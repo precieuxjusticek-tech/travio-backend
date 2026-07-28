@@ -2,8 +2,9 @@ const { auth, firestore } = require('../firebase');
 
 async function verifierToken(req, res, next) {
 
-  // ← ajouté : laisse passer le cron interne (badge spécial)
-  if (req.headers['x-internal-key'] === process.env.INTERNAL_CRON_KEY) {
+  // Laisse passer le cron interne (clé partagée, jamais un vrai utilisateur)
+  if (process.env.INTERNAL_CRON_KEY && req.headers['x-internal-key'] === process.env.INTERNAL_CRON_KEY) {
+    req.user = { internal: true, role: 'system' };
     return next();
   }
 

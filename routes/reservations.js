@@ -192,7 +192,6 @@ router.get('/', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
-    // ← AJOUTER CE BLOC
     if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
