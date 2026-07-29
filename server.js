@@ -163,9 +163,11 @@ cron.schedule('0 0 * * *', async () => {
 //  CRON JOB — Auto-ping (garde le service éveillé sur Render)
 //  Toutes les 10 minutes
 // ════════════════════════════════
+const PUBLIC_URL = 'https://travio-backend-pa4q.onrender.com';
+
 cron.schedule('*/10 * * * *', async () => {
   try {
-    await fetch(`http://localhost:${PORT}/health`);
+    await fetch(`${PUBLIC_URL}/health`);
     console.log('🏓 Auto-ping OK — service maintenu éveillé');
   } catch (err) {
     console.error('❌ Erreur auto-ping :', err.message);
