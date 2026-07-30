@@ -46,6 +46,7 @@ app.use('/trajet', require('./routes/trajets'));
 app.use('/', require('./routes/departs'));
 app.use('/', require('./routes/sessions'));
 app.use('/reservations', require('./routes/reservations'));
+app.use('/colis', require('./routes/colis'));
 app.use('/support', require('./routes/support'));
 app.use('/vehicule', require('./routes/vehicules'));
 app.use('/admin', require('./routes/admin'));
