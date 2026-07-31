@@ -14,7 +14,7 @@ function genererCodeRetrait() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O/1/I
   let code = '';
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
+  return `TRV-${code}`;
 }
 
 // ════════════════════════════════
@@ -23,7 +23,10 @@ function genererCodeRetrait() {
 // ════════════════════════════════
 router.post('/create', verifierToken, checkEssai, async (req, res) => {
   const {
-    agenceId, pdvId, trajetId, routeLabel,
+    agenceId, pdvId, trajetId, routeLabel, typeTrajet,
+    arretMontee, arretDescente,
+    pdvEmbarquementId, pdvEmbarquementNom, pdvEmbarquementVille,
+    pdvDebarquementId, pdvDebarquementNom, pdvDebarquementVille,
     sessionId, dateDepart, heureDepart, busNom,
     expediteurNom, expediteurTel,
     destinataireNom, destinataireTel,
@@ -74,7 +77,16 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     const data = {
       id: colisId,
       agenceId, pdvId, trajetId,
+      typeTrajet:  typeTrajet  || 'direct',
       routeLabel:  routeLabel  || null,
+      arretMontee:   arretMontee   || null,
+      arretDescente: arretDescente || null,
+      pdvEmbarquementId:    pdvEmbarquementId    || null,
+      pdvEmbarquementNom:   pdvEmbarquementNom   || null,
+      pdvEmbarquementVille: pdvEmbarquementVille || null,
+      pdvDebarquementId:    pdvDebarquementId    || null,
+      pdvDebarquementNom:   pdvDebarquementNom   || null,
+      pdvDebarquementVille: pdvDebarquementVille || null,
       sessionId:   sessionId   || null,
       dateDepart:  dateDepart  || null,
       heureDepart: heureDepart || null,
@@ -182,11 +194,46 @@ router.get('/agence', verifierToken, verifierRole('admin'), async (req, res) => 
 });
 
 // ════════════════════════════════
+//  RÉCUPÉRER LES COLIS À RÉCEPTIONNER PAR UN PDV
+//  GET /colis/a-receptionner?pdvId=xxx
+// ════════════════════════════════
+router.get('/a-receptionner', verifierToken, async (req, res) => {
+  const { pdvId } = req.query;
+  if (!pdvId) {
+    return res.status(400).json({ message: 'pdvId manquant.' });
+  }
+  try {
+    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+    if (req.user.agenceId !== pdvDoc.data().agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+    if (req.user.role === 'agent' && req.user.pdvId !== pdvId) {
+      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    }
+
+    const snapshot = await firestore
+      .collection('colis')
+      .where('pdvDebarquementId', '==', pdvId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const colis = snapshot.docs.map(doc => doc.data());
+    return res.status(200).json({ colis });
+
+  } catch (err) {
+    console.error('Erreur récupération colis à réceptionner :', err);
+    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
+  }
+});
+
+// ════════════════════════════════
 //  VÉRIFIER UN CODE DE RETRAIT
 //  GET /colis/verifier/:code
 // ════════════════════════════════
 router.get('/verifier/:code', verifierToken, async (req, res) => {
-  const code = (req.params.code || '').toUpperCase().trim();
+  let code = (req.params.code || '').toUpperCase().trim();
+  if (code && !code.startsWith('TRV-')) code = `TRV-${code}`;
 
   try {
     const snapshot = await firestore
@@ -206,8 +253,16 @@ router.get('/verifier/:code', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce colis.' });
     }
 
+    if (req.user.role === 'agent' && req.user.pdvId !== colis.pdvDebarquementId) {
+      return res.status(403).json({ message: "Ce colis n'est pas attendu à votre point de vente." });
+    }
+
     if (colis.statut === 'retire') {
       return res.status(409).json({ message: 'Ce colis a déjà été retiré.', colis });
+    }
+
+    if (colis.statut === 'en_transit') {
+      return res.status(409).json({ message: "Ce colis est encore en transit — il n'est pas encore arrivé à ce point de vente.", colis });
     }
 
     return res.status(200).json({ colis });
@@ -225,7 +280,7 @@ router.get('/verifier/:code', verifierToken, async (req, res) => {
 // ════════════════════════════════
 router.patch('/:id/statut', verifierToken, async (req, res) => {
   const { id } = req.params;
-  const { statut, pdvIdRetrait, retirePar } = req.body;
+  const { statut, retirePar } = req.body;
   const statutsValides = ['en_transit', 'arrive', 'retire'];
 
   if (!statutsValides.includes(statut)) {
@@ -242,8 +297,13 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
       return res.status(403).json({ message: 'Accès refusé à ce colis.' });
     }
 
-    if (req.user.role === 'agent' && req.user.pdvId !== colis.pdvId && req.user.pdvId !== pdvIdRetrait) {
-      return res.status(403).json({ message: 'Accès refusé à ce colis.' });
+    if (req.user.role === 'agent') {
+      if (!colis.pdvDebarquementId) {
+        return res.status(400).json({ message: "Ce colis n'a pas de PDV de débarquement défini — impossible de mettre à jour son statut." });
+      }
+      if (req.user.pdvId !== colis.pdvDebarquementId) {
+        return res.status(403).json({ message: 'Seul le point de vente de débarquement peut modifier le statut de ce colis.' });
+      }
     }
 
     if (!(await essaiEstActif(colis.agenceId))) {
@@ -254,9 +314,13 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
       return res.status(409).json({ message: 'Ce colis a déjà été retiré.' });
     }
 
+    if (statut === 'retire' && colis.statut !== 'arrive') {
+      return res.status(409).json({ message: "Ce colis doit d'abord être marqué comme arrivé avant de pouvoir être retiré." });
+    }
+
     const update = { statut, updatedAt: new Date().toISOString() };
     if (statut === 'retire') {
-      update.pdvIdRetrait = pdvIdRetrait || null;
+      update.pdvIdRetrait = colis.pdvDebarquementId; // toujours le PDV de débarquement, jamais une valeur envoyée par le client
       update.retirePar    = retirePar    || null;
       update.dateRetrait  = new Date().toISOString();
     }
