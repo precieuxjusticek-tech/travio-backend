@@ -105,9 +105,16 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       prixTransport: Number(prixTransport),
       codeRetrait,
       statut: 'en_transit', // en_transit -> arrive -> retire
+
       pdvIdRetrait: null,
       retirePar:    null,
       dateRetrait:  null,
+
+      marqueArrivePar: null,
+      dateArrivee:     null,
+
+      typePieceIdentite:   null,
+      numeroPieceIdentite: null,
 
       createdAt: new Date().toISOString(),
     };
@@ -278,13 +285,24 @@ router.get('/verifier/:code', verifierToken, async (req, res) => {
 //  PATCH /colis/:id/statut
 //  body : { statut, pdvIdRetrait?, retirePar? }
 // ════════════════════════════════
+
 router.patch('/:id/statut', verifierToken, async (req, res) => {
   const { id } = req.params;
-  const { statut, retirePar } = req.body;
+  const { statut, retirePar, marquePar, typePieceIdentite, numeroPieceIdentite } = req.body;
   const statutsValides = ['en_transit', 'arrive', 'retire'];
 
   if (!statutsValides.includes(statut)) {
     return res.status(400).json({ message: 'Statut invalide.' });
+  }
+
+  // Identité obligatoire avant tout retrait — validé côté serveur, jamais fait confiance au client
+  if (statut === 'retire') {
+    if (!retirePar || !retirePar.trim()) {
+      return res.status(400).json({ message: 'Le nom de la personne qui retire le colis est obligatoire.' });
+    }
+    if (!typePieceIdentite || !numeroPieceIdentite || !numeroPieceIdentite.trim()) {
+      return res.status(400).json({ message: "La pièce d'identité (type et numéro) est obligatoire pour retirer un colis." });
+    }
   }
 
   try {
@@ -319,10 +337,18 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
     }
 
     const update = { statut, updatedAt: new Date().toISOString() };
+
+    if (statut === 'arrive') {
+      update.marqueArrivePar = marquePar || null;
+      update.dateArrivee     = new Date().toISOString();
+    }
+
     if (statut === 'retire') {
-      update.pdvIdRetrait = colis.pdvDebarquementId; // toujours le PDV de débarquement, jamais une valeur envoyée par le client
-      update.retirePar    = retirePar    || null;
-      update.dateRetrait  = new Date().toISOString();
+      update.pdvIdRetrait         = colis.pdvDebarquementId; // toujours le PDV de débarquement, jamais une valeur envoyée par le client
+      update.retirePar            = retirePar.trim();
+      update.typePieceIdentite    = typePieceIdentite;
+      update.numeroPieceIdentite  = numeroPieceIdentite.trim();
+      update.dateRetrait          = new Date().toISOString();
     }
 
     await docRef.update(update);
