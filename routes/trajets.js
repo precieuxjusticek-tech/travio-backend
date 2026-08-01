@@ -197,6 +197,7 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
     prixParType,
     limiteBagages, fraisExcesBagages,
     arrets,
+    pdvDepart, pdvArrivee,
   } = req.body;
 
   try {
@@ -215,6 +216,35 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
+    if (pdvDepart !== undefined) {
+      if (!Array.isArray(pdvDepart) || pdvDepart.length === 0) {
+        return res.status(400).json({ message: 'Sélectionnez au moins un PDV de départ.' });
+      }
+      const idsDepart = pdvDepart.map(p => p.id);
+      const docsDepart = await firestore.getAll(
+        ...idsDepart.map(id => firestore.collection('pointsDeVente').doc(id))
+      );
+      const invalideDepart = docsDepart.some(
+        d => !d.exists || d.data().agenceId !== trajetDocCheck.data().agenceId
+      );
+      if (invalideDepart) {
+        return res.status(400).json({ message: 'Un ou plusieurs PDV de départ sont invalides.' });
+      }
+    }
+
+    if (pdvArrivee !== undefined && Array.isArray(pdvArrivee) && pdvArrivee.length > 0) {
+      const idsArrivee = pdvArrivee.map(p => p.id);
+      const docsArrivee = await firestore.getAll(
+        ...idsArrivee.map(id => firestore.collection('pointsDeVente').doc(id))
+      );
+      const invalideArrivee = docsArrivee.some(
+        d => !d.exists || d.data().agenceId !== trajetDocCheck.data().agenceId
+      );
+      if (invalideArrivee) {
+        return res.status(400).json({ message: 'Un ou plusieurs PDV d\'arrivée sont invalides.' });
+      }
+    }
+
     const pdvArretsRecalc = arrets !== undefined
       ? arrets.filter(a => a.type === 'pdv').map(a => ({ id: a.id, nom: a.nom, ville: a.ville || '' }))
       : undefined;
@@ -226,6 +256,8 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
       ...(arrets !== undefined && { arrets }),
       ...(pdvArretsRecalc !== undefined && { pdvArrets: pdvArretsRecalc }),
       ...(req.body.prixTroncons !== undefined && { prixTroncons: req.body.prixTroncons }),
+      ...(pdvDepart !== undefined && { pdvDepart }),
+      ...(pdvArrivee !== undefined && { pdvArrivee }),
       updatedAt:         new Date().toISOString(),
     };
 

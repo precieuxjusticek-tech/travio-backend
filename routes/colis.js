@@ -115,6 +115,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 
       typePieceIdentite:   null,
       numeroPieceIdentite: null,
+      infoSansPiece:       null,
 
       createdAt: new Date().toISOString(),
     };
@@ -288,8 +289,9 @@ router.get('/verifier/:code', verifierToken, async (req, res) => {
 
 router.patch('/:id/statut', verifierToken, async (req, res) => {
   const { id } = req.params;
-  const { statut, retirePar, marquePar, typePieceIdentite, numeroPieceIdentite } = req.body;
+  const { statut, retirePar, marquePar, typePieceIdentite, numeroPieceIdentite, infoSansPiece } = req.body;
   const statutsValides = ['en_transit', 'arrive', 'retire'];
+  const TYPES_PIECE_VALIDES = ['cni', 'passeport', 'permis', 'aucune'];
 
   if (!statutsValides.includes(statut)) {
     return res.status(400).json({ message: 'Statut invalide.' });
@@ -300,8 +302,17 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
     if (!retirePar || !retirePar.trim()) {
       return res.status(400).json({ message: 'Le nom de la personne qui retire le colis est obligatoire.' });
     }
-    if (!typePieceIdentite || !numeroPieceIdentite || !numeroPieceIdentite.trim()) {
-      return res.status(400).json({ message: "La pièce d'identité (type et numéro) est obligatoire pour retirer un colis." });
+    if (!typePieceIdentite || !TYPES_PIECE_VALIDES.includes(typePieceIdentite)) {
+      return res.status(400).json({ message: "Le type de pièce d'identité est invalide ou manquant." });
+    }
+    if (typePieceIdentite === 'aucune') {
+      if (!infoSansPiece || !infoSansPiece.trim()) {
+        return res.status(400).json({ message: "En l'absence de pièce d'identité, une précision (motif, témoin...) est obligatoire." });
+      }
+    } else {
+      if (!numeroPieceIdentite || !numeroPieceIdentite.trim()) {
+        return res.status(400).json({ message: "Le numéro de la pièce d'identité est obligatoire." });
+      }
     }
   }
 
@@ -347,7 +358,8 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
       update.pdvIdRetrait         = colis.pdvDebarquementId; // toujours le PDV de débarquement, jamais une valeur envoyée par le client
       update.retirePar            = retirePar.trim();
       update.typePieceIdentite    = typePieceIdentite;
-      update.numeroPieceIdentite  = numeroPieceIdentite.trim();
+      update.numeroPieceIdentite  = typePieceIdentite === 'aucune' ? null : numeroPieceIdentite.trim();
+      update.infoSansPiece        = typePieceIdentite === 'aucune' ? infoSansPiece.trim() : null;
       update.dateRetrait          = new Date().toISOString();
     }
 
