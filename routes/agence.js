@@ -1,5 +1,6 @@
 const express = require('express');
 const router  = express.Router();
+const crypto = require('crypto');
 
 const { firestore } = require('../firebase');
 const { cloudinary, uploadToCloudinary } = require('../config/cloudinary');
@@ -440,6 +441,56 @@ router.patch('/:agenceId/billet-config', verifierToken, verifierRole('admin'), a
 
   } catch (err) {
     console.error('Erreur update billet-config :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════════════════════════
+//  LIEN D'ACCÈS CHAUFFEUR
+// ════════════════════════════════════════════════════
+
+// ── RÉCUPÉRER LE TOKEN ACTUEL (ou null si jamais généré) ──
+// GET /agence/:agenceId/chauffeur-token
+router.get('/:agenceId/chauffeur-token', verifierToken, verifierRole('admin'), async (req, res) => {
+  const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  try {
+    const doc = await firestore.collection('agences').doc(agenceId).get();
+    if (!doc.exists) return res.status(404).json({ message: 'Agence introuvable.' });
+
+    return res.status(200).json({ token: doc.data().chauffeurAccessToken || null });
+
+  } catch (err) {
+    console.error('Erreur lecture token chauffeur :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ── GÉNÉRER / RÉGÉNÉRER LE TOKEN (révoque l'ancien lien) ──
+// POST /agence/:agenceId/chauffeur-token/generer
+router.post('/:agenceId/chauffeur-token/generer', verifierToken, verifierRole('admin'), async (req, res) => {
+  const { agenceId } = req.params;
+
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+
+  try {
+    const token = crypto.randomBytes(24).toString('hex'); // 48 caractères, imprédictible
+
+    await firestore.collection('agences').doc(agenceId).update({
+      chauffeurAccessToken: token,
+      chauffeurAccessTokenGenereLe: new Date().toISOString(),
+    });
+
+    return res.status(200).json({ message: 'Lien généré avec succès.', token });
+
+  } catch (err) {
+    console.error('Erreur génération token chauffeur :', err);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });

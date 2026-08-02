@@ -39,7 +39,7 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 //  POST /vehicule/create
 // ════════════════════════════════
 router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (req, res) => {
-  const { nom, type, capacite } = req.body;
+  const { nom, type, capacite, chauffeurNom, chauffeurTel } = req.body;
   const agenceId = req.user.agenceId;
   if (!agenceId || !nom || !type || !capacite) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
@@ -49,6 +49,8 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     const vehiculeData = {
       id: ref.id, agenceId, nom, type,
       capacite: parseInt(capacite),
+      chauffeurNom: chauffeurNom || null,
+      chauffeurTel: chauffeurTel || null,
       actif: true,
       createdAt: new Date().toISOString(),
     };
@@ -102,7 +104,7 @@ router.get('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res
 // ════════════════════════════════
 router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res) => {
   const { vehiculeId } = req.params;
-  const { nom, type, capacite } = req.body;
+  const { nom, type, capacite, chauffeurNom, chauffeurTel } = req.body;
   if (!nom || !type || !capacite) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
@@ -116,7 +118,7 @@ router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, r
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
-    const updateData = { nom, type, capacite: parseInt(capacite), updatedAt: new Date().toISOString() };
+    const updateData = { nom, type, capacite: parseInt(capacite), chauffeurNom: chauffeurNom || null, chauffeurTel: chauffeurTel || null, updatedAt: new Date().toISOString() };
     await firestore.collection('vehicules').doc(vehiculeId).update(updateData);
 
     const departsSnap = await firestore.collection('departs').where('vehiculeId', '==', vehiculeId).get();
@@ -271,6 +273,34 @@ router.delete('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, 
     });
   } catch (err) {
     console.error('Erreur suppression véhicule :', err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ════════════════════════════════
+//  LISTE DES CHAUFFEURS (dédupliquée par téléphone)
+//  GET /vehicule/chauffeurs/liste?agenceId=xxx
+// ════════════════════════════════
+router.get('/chauffeurs/liste', verifierToken, verifierRole('admin'), async (req, res) => {
+  const { agenceId } = req.query;
+  if (!agenceId) return res.status(400).json({ message: 'agenceId manquant.' });
+  if (req.user.agenceId !== agenceId) {
+    return res.status(403).json({ message: 'Accès refusé à cette agence.' });
+  }
+  try {
+    const snapshot = await firestore.collection('vehicules').where('agenceId', '==', agenceId).get();
+    const vus = new Map();
+    snapshot.docs.forEach(d => {
+      const v = d.data();
+      if (!v.chauffeurTel) return;
+      if (!vus.has(v.chauffeurTel)) {
+        vus.set(v.chauffeurTel, { nom: v.chauffeurNom || null, tel: v.chauffeurTel, bus: [] });
+      }
+      vus.get(v.chauffeurTel).bus.push(v.nom);
+    });
+    return res.status(200).json({ chauffeurs: Array.from(vus.values()) });
+  } catch (err) {
+    console.error('Erreur récupération chauffeurs :', err);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });

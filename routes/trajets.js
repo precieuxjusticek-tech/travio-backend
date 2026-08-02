@@ -282,10 +282,35 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
         const arretsActifsFiltres = (session.arretsActifs || [])
           .filter(a => nomsNouveaux.includes(a.nom));
 
+        // ── Reconstruire les bornes AVANT et APRÈS pour remapper les segments correctement ──
+        const ancienPoints  = ['__DEPART__', ...(session.arretsActifs || []).map(a => a.nom), '__ARRIVEE__'];
+        const nouveauPoints = ['__DEPART__', ...arretsActifsFiltres.map(a => a.nom), '__ARRIVEE__'];
+
         const ancientableau = session.placesVenduesSegments || [];
-        const nouveauTableau = Array(nbNouveauxSegments).fill(0).map((_, i) => {
-          return ancientableau[i] ?? 0;
-        });
+
+        // Pour chaque nouveau segment [nouveauPoints[j] -> nouveauPoints[j+1]],
+        // on additionne tous les anciens segments compris entre ces deux mêmes bornes
+        const nouveauTableau = [];
+        for (let j = 0; j < nouveauPoints.length - 1; j++) {
+          const idxDebut = ancienPoints.indexOf(nouveauPoints[j]);
+          const idxFin   = ancienPoints.indexOf(nouveauPoints[j + 1]);
+
+          let somme = 0;
+          if (idxDebut !== -1 && idxFin !== -1 && idxFin > idxDebut) {
+            // Les deux péages existaient déjà avant → on fusionne les vraies ventes
+            for (let k = idxDebut; k < idxFin; k++) {
+              somme += ancientableau[k] ?? 0;
+            }
+          } else if (idxDebut === -1 || idxFin === -1) {
+            // Au moins un des deux péages est TOUT NOUVEAU (n'existait pas avant)
+            // → personne n'a pu acheter sur ce bout de route, donc 0 obligatoirement
+            somme = 0;
+          } else {
+            // Cas résiduel improbable (ordre incohérent) → sécurité minimale
+            somme = ancientableau[j] ?? 0;
+          }
+          nouveauTableau.push(somme);
+        }
 
         await batch.update(doc.ref, {
           arretsActifs: arretsActifsFiltres,

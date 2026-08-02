@@ -5,6 +5,7 @@ const { firestore } = require('../firebase');
 const { checkEssai, essaiEstActif } = require('../helpers/essai');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole }  = require('../middlewares/verifierRole');
+const { verifierAccesChauffeur } = require('../middlewares/verifieracceschauffeur');
 
 // ════════════════════════════════
 //  UTIL — Génération code de retrait
@@ -370,6 +371,145 @@ router.patch('/:id/statut', verifierToken, async (req, res) => {
 
   } catch (err) {
     console.error('Erreur mise à jour statut colis :', err);
+    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
+  }
+});
+
+// ════════════════════════════════════════════════════
+//  ROUTES CHAUFFEUR — accès par lien partagé (sans JWT)
+//  Utilisées uniquement par chauffeur.html
+// ════════════════════════════════════════════════════
+
+// ── VÉRIFIER UN CODE (chauffeur) ──
+// GET /colis/chauffeur/verifier/:code?agenceId=xxx&token=xxx
+router.get('/chauffeur/verifier/:code', verifierAccesChauffeur, async (req, res) => {
+  let code = (req.params.code || '').toUpperCase().trim();
+  if (code && !code.startsWith('TRV-')) code = `TRV-${code}`;
+
+  try {
+    const snapshot = await firestore
+      .collection('colis')
+      .where('codeRetrait', '==', code)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ message: 'Code invalide ou colis introuvable.' });
+    }
+
+    const colis = snapshot.docs[0].data();
+
+    // req.agenceId vient du middleware, jamais du client directement
+    if (colis.agenceId !== req.agenceId) {
+      return res.status(403).json({ message: "Ce colis n'est pas rattaché à votre agence." });
+    }
+
+    // Le chauffeur ne peut agir que sur les colis sans PDV de débarquement (arrêt libre)
+    if (colis.pdvDebarquementId) {
+      return res.status(403).json({ message: "Ce colis doit être retiré via un point de vente, pas via ce lien chauffeur." });
+    }
+
+    if (colis.statut === 'retire') {
+      return res.status(409).json({ message: 'Ce colis a déjà été retiré.', colis });
+    }
+    if (colis.statut === 'en_transit') {
+      return res.status(409).json({ message: "Ce colis est encore en transit — il n'est pas encore arrivé.", colis });
+    }
+
+    return res.status(200).json({ colis });
+
+  } catch (err) {
+    console.error('Erreur vérification code colis (chauffeur) :', err);
+    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
+  }
+});
+
+// ── CHANGER LE STATUT D'UN COLIS (chauffeur) ──
+// PATCH /colis/chauffeur/:id/statut?agenceId=xxx&token=xxx
+// body : { statut: 'arrive' | 'retire', retirePar?, typePieceIdentite?, numeroPieceIdentite?, infoSansPiece? }
+router.patch('/chauffeur/:id/statut', verifierAccesChauffeur, async (req, res) => {
+  const { id } = req.params;
+  const { statut, retirePar, typePieceIdentite, numeroPieceIdentite, infoSansPiece } = req.body;
+
+  // Le chauffeur ne peut jamais remettre un colis "en_transit" — seulement faire avancer le statut
+  const statutsValides = ['arrive', 'retire'];
+  const TYPES_PIECE_VALIDES = ['cni', 'passeport', 'permis', 'aucune'];
+
+  if (!statutsValides.includes(statut)) {
+    return res.status(400).json({ message: 'Statut invalide.' });
+  }
+
+  if (statut === 'retire') {
+    if (!retirePar || !retirePar.trim()) {
+      return res.status(400).json({ message: 'Le nom de la personne qui retire le colis est obligatoire.' });
+    }
+    if (!typePieceIdentite || !TYPES_PIECE_VALIDES.includes(typePieceIdentite)) {
+      return res.status(400).json({ message: "Le type de pièce d'identité est invalide ou manquant." });
+    }
+    if (typePieceIdentite === 'aucune') {
+      if (!infoSansPiece || !infoSansPiece.trim()) {
+        return res.status(400).json({ message: "En l'absence de pièce d'identité, une précision est obligatoire." });
+      }
+    } else {
+      if (!numeroPieceIdentite || !numeroPieceIdentite.trim()) {
+        return res.status(400).json({ message: "Le numéro de la pièce d'identité est obligatoire." });
+      }
+    }
+  }
+
+  try {
+    const docRef = firestore.collection('colis').doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ message: 'Colis introuvable.' });
+
+    const colis = doc.data();
+
+    if (colis.agenceId !== req.agenceId) {
+      return res.status(403).json({ message: 'Accès refusé à ce colis.' });
+    }
+
+    // Le chauffeur ne peut agir que sur les colis sans PDV de débarquement (arrêt libre)
+    if (colis.pdvDebarquementId) {
+      return res.status(403).json({ message: "Ce colis doit être retiré via un point de vente, pas via ce lien chauffeur." });
+    }
+
+    if (!(await essaiEstActif(colis.agenceId))) {
+      return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
+    }
+
+    if (colis.statut === 'retire') {
+      return res.status(409).json({ message: 'Ce colis a déjà été retiré.' });
+    }
+    if (statut === 'arrive' && colis.statut !== 'en_transit') {
+      return res.status(409).json({ message: "Ce colis n'est pas en transit." });
+    }
+    if (statut === 'retire' && colis.statut !== 'arrive') {
+      return res.status(409).json({ message: "Ce colis doit d'abord être marqué comme arrivé." });
+    }
+
+    const update = { statut, updatedAt: new Date().toISOString() };
+
+    if (statut === 'arrive') {
+      update.marqueArrivePar = 'chauffeur'; // pas d'identité individuelle, cf. note sécurité
+      update.dateArrivee     = new Date().toISOString();
+    }
+
+    if (statut === 'retire') {
+      update.pdvIdRetrait        = colis.pdvDebarquementId || null;
+      update.retirePar           = retirePar.trim();
+      update.typePieceIdentite   = typePieceIdentite;
+      update.numeroPieceIdentite = typePieceIdentite === 'aucune' ? null : numeroPieceIdentite.trim();
+      update.infoSansPiece       = typePieceIdentite === 'aucune' ? infoSansPiece.trim() : null;
+      update.dateRetrait         = new Date().toISOString();
+    }
+
+    await docRef.update(update);
+    const updated = await docRef.get();
+
+    return res.status(200).json({ message: 'Statut mis à jour.', colis: updated.data() });
+
+  } catch (err) {
+    console.error('Erreur maj statut colis (chauffeur) :', err);
     return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
   }
 });
