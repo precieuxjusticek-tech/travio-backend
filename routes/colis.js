@@ -405,7 +405,8 @@ router.get('/chauffeur/verifier/:code', verifierAccesChauffeur, async (req, res)
     }
 
     // Le chauffeur ne peut agir que sur les colis sans PDV de débarquement (arrêt libre)
-    if (colis.pdvDebarquementId) {
+    // "__lieu_libre__" est un placeholder frontend, pas un vrai PDV — on le traite comme null
+    if (colis.pdvDebarquementId && colis.pdvDebarquementId !== '__lieu_libre__') {
       return res.status(403).json({ message: "Ce colis doit être retiré via un point de vente, pas via ce lien chauffeur." });
     }
 
@@ -469,7 +470,8 @@ router.patch('/chauffeur/:id/statut', verifierAccesChauffeur, async (req, res) =
     }
 
     // Le chauffeur ne peut agir que sur les colis sans PDV de débarquement (arrêt libre)
-    if (colis.pdvDebarquementId) {
+    // "__lieu_libre__" est un placeholder frontend, pas un vrai PDV — on le traite comme null
+    if (colis.pdvDebarquementId && colis.pdvDebarquementId !== '__lieu_libre__') {
       return res.status(403).json({ message: "Ce colis doit être retiré via un point de vente, pas via ce lien chauffeur." });
     }
 
@@ -495,7 +497,7 @@ router.patch('/chauffeur/:id/statut', verifierAccesChauffeur, async (req, res) =
     }
 
     if (statut === 'retire') {
-      update.pdvIdRetrait        = colis.pdvDebarquementId || null;
+      update.pdvIdRetrait        = (colis.pdvDebarquementId && colis.pdvDebarquementId !== '__lieu_libre__') ? colis.pdvDebarquementId : null;
       update.retirePar           = retirePar.trim();
       update.typePieceIdentite   = typePieceIdentite;
       update.numeroPieceIdentite = typePieceIdentite === 'aucune' ? null : numeroPieceIdentite.trim();
