@@ -8,6 +8,7 @@ const { OFFSET_BRAZZA_MS, todayBrazza } = require('./helpers/dates');
 const { getSegmentsTrajet } = require('./helpers/segments');
 const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
 const { verifierToken } = require('./middlewares/verifierToken');
+const { sanitizeInput } = require('./helpers/sanitize');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +34,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '20mb' }));
+app.use(sanitizeInput);
+
 // ════════════════════════════════
 //  HEALTH CHECK
 // ════════════════════════════════

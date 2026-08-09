@@ -13,9 +13,10 @@ cloudinary.config({
 async function uploadToCloudinary(base64String, folder, publicId) {
   const result = await cloudinary.uploader.upload(base64String, {
     folder,
-    public_id:      publicId,
-    resource_type: 'image',
-    overwrite:      true,
+    public_id:       publicId,
+    resource_type:   'image',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    overwrite:       true,
   });
   return result.secure_url;
 }
