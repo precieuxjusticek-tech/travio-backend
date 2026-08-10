@@ -55,15 +55,20 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     return res.status(403).json({ message: 'Vous ne pouvez vendre que pour votre propre PDV.' });
   }
 
-  if (!agenceId || !pdvId || !trajetId || !sessionId || !dateDepart || !prenomPassager || !prixTotal) {
+  if (!agenceId || !trajetId || !sessionId || !dateDepart || !prenomPassager || !prixTotal) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
 
   try {
-    const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
-    if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
-    if (req.user.agenceId !== pdvDoc.data().agenceId) {
-      return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+    let pdvNomVente = 'Vente directe — Siège';
+
+    if (pdvId) {
+      const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
+      if (!pdvDoc.exists) return res.status(404).json({ message: 'PDV introuvable.' });
+      if (req.user.agenceId !== pdvDoc.data().agenceId) {
+        return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
+      }
+      pdvNomVente = pdvDoc.data().nom || pdvNomVente;
     }
 
     const trajetDoc = await firestore.collection('trajets').doc(trajetId).get();
@@ -120,7 +125,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 
         t.set(resaRef, {
           id: resaId,
-          agenceId, pdvId, trajetId, sessionId,
+          agenceId, pdvId: pdvId || null, pdvVendeurNom: pdvNomVente, trajetId, sessionId,
           typeTrajet:        typeTrajet   || 'direct',
           routeLabel:        routeLabel   || null,
           heureDepart:       heureDepart  || null,
