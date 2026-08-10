@@ -9,6 +9,7 @@ const { getSegmentsTrajet } = require('./helpers/segments');
 const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
 const { verifierToken } = require('./middlewares/verifierToken');
 const { sanitizeInput } = require('./helpers/sanitize');
+const { limiterGlobal, limiterAuth } = require('./middlewares/rateLimiter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '20mb' }));
 app.use(sanitizeInput);
+app.use(limiterGlobal);
 
 // ════════════════════════════════
 //  HEALTH CHECK
@@ -42,7 +44,7 @@ app.use(sanitizeInput);
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', time: new Date().toISOString() });
 });
-app.use('/auth', require('./routes/auth'));
+app.use('/auth', limiterAuth, require('./routes/auth'));
 app.use('/agence', require('./routes/agence'));
 app.use('/pdv', require('./routes/pdv'));
 app.use('/trajet', require('./routes/trajets'));
