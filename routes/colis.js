@@ -46,17 +46,33 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
   if (!agenceId || !pdvId || !trajetId) {
     return res.status(400).json({ message: 'agenceId, pdvId et trajetId sont obligatoires.' });
   }
-  if (!expediteurNom || !expediteurTel) {
-    return res.status(400).json({ message: 'Informations expéditeur manquantes.' });
+  if (typeof expediteurNom !== 'string' || expediteurNom.trim().length < 2 || expediteurNom.length > 100) {
+    return res.status(400).json({ message: 'Nom expéditeur invalide.' });
   }
-  if (!destinataireNom || !destinataireTel) {
-    return res.status(400).json({ message: 'Informations destinataire manquantes.' });
+  if (typeof expediteurTel !== 'string' || !/^\+?[0-9]{6,15}$/.test(expediteurTel.replace(/\s/g, ''))) {
+    return res.status(400).json({ message: 'Téléphone expéditeur invalide.' });
   }
-  if (!nature) {
+  if (typeof destinataireNom !== 'string' || destinataireNom.trim().length < 2 || destinataireNom.length > 100) {
+    return res.status(400).json({ message: 'Nom destinataire invalide.' });
+  }
+  if (typeof destinataireTel !== 'string' || !/^\+?[0-9]{6,15}$/.test(destinataireTel.replace(/\s/g, ''))) {
+    return res.status(400).json({ message: 'Téléphone destinataire invalide.' });
+  }
+  if (typeof nature !== 'string' || nature.trim().length < 1 || nature.length > 200) {
     return res.status(400).json({ message: 'La nature du colis est obligatoire.' });
   }
-  if (!prixTransport || Number(prixTransport) <= 0) {
-    return res.status(400).json({ message: 'Le prix du transport est obligatoire.' });
+  const prixTransportNum = Number(prixTransport);
+  if (prixTransport === undefined || prixTransport === null || prixTransport === '' || !Number.isFinite(prixTransportNum) || prixTransportNum <= 0) {
+    return res.status(400).json({ message: 'Le prix du transport est invalide.' });
+  }
+  if (poids !== undefined && poids !== null && !Number.isFinite(Number(poids))) {
+    return res.status(400).json({ message: 'Le poids est invalide.' });
+  }
+  if (valeurDeclaree !== undefined && valeurDeclaree !== null && !Number.isFinite(Number(valeurDeclaree))) {
+    return res.status(400).json({ message: 'La valeur déclarée est invalide.' });
+  }
+  if (remarques !== undefined && remarques !== null && (typeof remarques !== 'string' || remarques.length > 500)) {
+    return res.status(400).json({ message: 'Remarques invalides (max 500 caractères).' });
   }
 
   try {
@@ -103,7 +119,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       valeurDeclaree: valeurDeclaree != null ? Number(valeurDeclaree) : null,
       remarques:      remarques      || null,
 
-      prixTransport: Number(prixTransport),
+      prixTransport: prixTransportNum,
       codeRetrait,
       statut: 'en_transit', // en_transit -> arrive -> retire
 

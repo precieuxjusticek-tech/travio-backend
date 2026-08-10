@@ -33,8 +33,28 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
   if (!agenceId || !ville || !nom || !adresse || !telephone || !responsable || !emailConnexion || !password) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
-
-  if (password.length < 6) {
+  if (typeof nom !== 'string' || nom.trim().length < 2 || nom.length > 100) {
+    return res.status(400).json({ message: 'Nom du PDV invalide.' });
+  }
+  if (typeof ville !== 'string' || ville.trim().length < 2 || ville.length > 100) {
+    return res.status(400).json({ message: 'Ville invalide.' });
+  }
+  if (typeof adresse !== 'string' || adresse.trim().length < 5 || adresse.length > 200) {
+    return res.status(400).json({ message: 'Adresse invalide.' });
+  }
+  if (typeof telephone !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephone.replace(/\s/g, ''))) {
+    return res.status(400).json({ message: 'Numéro de téléphone invalide.' });
+  }
+  if (typeof responsable !== 'string' || responsable.trim().length < 2 || responsable.length > 100) {
+    return res.status(400).json({ message: 'Nom du responsable invalide.' });
+  }
+  if (typeof emailConnexion !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailConnexion)) {
+    return res.status(400).json({ message: 'Email de connexion invalide.' });
+  }
+  if (emailContact !== undefined && emailContact !== null && emailContact !== '' && (typeof emailContact !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContact))) {
+    return res.status(400).json({ message: 'Email de contact invalide.' });
+  }
+  if (typeof password !== 'string' || password.length < 6) {
     return res.status(400).json({ message: 'Le mot de passe doit faire au moins 6 caractères.' });
   }
 
@@ -182,6 +202,27 @@ router.patch('/:pdvId', verifierToken, verifierRole('admin'), async (req, res) =
     if (!nom || !ville || !adresse || !responsable || !telephone || !emailConnexion) {
       return res.status(400).json({ message: 'Champs obligatoires manquants.' });
     }
+    if (typeof nom !== 'string' || nom.trim().length < 2 || nom.length > 100) {
+      return res.status(400).json({ message: 'Nom du PDV invalide.' });
+    }
+    if (typeof ville !== 'string' || ville.trim().length < 2 || ville.length > 100) {
+      return res.status(400).json({ message: 'Ville invalide.' });
+    }
+    if (typeof adresse !== 'string' || adresse.trim().length < 5 || adresse.length > 200) {
+      return res.status(400).json({ message: 'Adresse invalide.' });
+    }
+    if (typeof telephone !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephone.replace(/\s/g, ''))) {
+      return res.status(400).json({ message: 'Numéro de téléphone invalide.' });
+    }
+    if (typeof responsable !== 'string' || responsable.trim().length < 2 || responsable.length > 100) {
+      return res.status(400).json({ message: 'Nom du responsable invalide.' });
+    }
+    if (typeof emailConnexion !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailConnexion)) {
+      return res.status(400).json({ message: 'Email de connexion invalide.' });
+    }
+    if (emailContact !== undefined && emailContact !== null && emailContact !== '' && (typeof emailContact !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContact))) {
+      return res.status(400).json({ message: 'Email de contact invalide.' });
+    }
 
     const { agentUid } = doc.data();
 
@@ -311,7 +352,7 @@ router.patch('/:pdvId/reset-password', verifierToken, verifierRole('admin'), asy
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
-    if (!newPassword || newPassword.length < 6) {
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
       return res.status(400).json({ message: 'Mot de passe trop court (min. 6 caractères).' });
     }
 
@@ -356,7 +397,7 @@ router.patch('/:pdvId/quota', verifierToken, verifierRole('admin'), async (req, 
       return res.status(403).json({ message: 'Accès refusé à ce PDV.' });
     }
 
-    if (typeof quota !== 'number' || quota < 0) {
+    if (typeof quota !== 'number' || !Number.isFinite(quota) || quota < 0) {
       return res.status(400).json({ message: 'Quota invalide.' });
     }
 

@@ -52,6 +52,31 @@ router.post('/trajet/:trajetId/depart/create', verifierToken, verifierRole('admi
   if (!busNom || !busType || !busCapacite || !heureDepart) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof busNom !== 'string' || busNom.trim().length < 1 || busNom.length > 100) {
+    return res.status(400).json({ message: 'Nom du bus invalide.' });
+  }
+  if (typeof busType !== 'string' || busType.length > 50) {
+    return res.status(400).json({ message: 'Type de bus invalide.' });
+  }
+  const busCapaciteNum = Number(busCapacite);
+  if (!Number.isInteger(busCapaciteNum) || busCapaciteNum <= 0 || busCapaciteNum > 200) {
+    return res.status(400).json({ message: 'Capacité du bus invalide.' });
+  }
+  if (typeof heureDepart !== 'string' || !/^\d{2}:\d{2}$/.test(heureDepart)) {
+    return res.status(400).json({ message: 'Heure de départ invalide.' });
+  }
+  if (heureArrivee !== undefined && heureArrivee !== null && (typeof heureArrivee !== 'string' || !/^\d{2}:\d{2}$/.test(heureArrivee))) {
+    return res.status(400).json({ message: 'Heure d\'arrivée invalide.' });
+  }
+  if (tousLesJours !== undefined && typeof tousLesJours !== 'boolean') {
+    return res.status(400).json({ message: 'tousLesJours doit être un booléen.' });
+  }
+  if (jours !== undefined && !Array.isArray(jours)) {
+    return res.status(400).json({ message: 'jours doit être un tableau.' });
+  }
+  if (arretsActifs !== undefined && !Array.isArray(arretsActifs)) {
+    return res.status(400).json({ message: 'arretsActifs doit être un tableau.' });
+  }
 
   try {
     if (vehiculeId) {
@@ -69,16 +94,14 @@ router.post('/trajet/:trajetId/depart/create', verifierToken, verifierRole('admi
     const ref = firestore.collection('departs').doc();
     const departData = {
       id: ref.id, trajetId, agenceId,
-      busNom, busType, busCapacite,
-      vehiculeId: vehiculeId || null,
+      placesTotal: busCapaciteNum,
+      placesVendues: 0,
+      actif: true,
       heureDepart, heureArrivee: heureArrivee || null,
       dureeEstimee: dureeEstimee || null,
       tousLesJours: tousLesJours ?? true,
       jours: jours || [],
       arretsActifs: arretsActifs || [],
-      placesTotal: busCapacite,
-      placesVendues: 0,
-      actif: true,
       createdAt: new Date().toISOString(),
     };
     await ref.set(departData);
@@ -150,6 +173,25 @@ router.patch('/depart/:departId', verifierToken, verifierRole('admin'), async (r
     if (!busNom || !busType || !busCapacite || !heureDepart) {
       return res.status(400).json({ message: 'Champs obligatoires manquants.' });
     }
+    if (typeof busNom !== 'string' || busNom.trim().length < 1 || busNom.length > 100) {
+      return res.status(400).json({ message: 'Nom du bus invalide.' });
+    }
+    const busCapaciteNum = Number(busCapacite);
+    if (!Number.isInteger(busCapaciteNum) || busCapaciteNum <= 0 || busCapaciteNum > 200) {
+      return res.status(400).json({ message: 'Capacité du bus invalide.' });
+    }
+    if (typeof heureDepart !== 'string' || !/^\d{2}:\d{2}$/.test(heureDepart)) {
+      return res.status(400).json({ message: 'Heure de départ invalide.' });
+    }
+    if (heureArrivee !== undefined && heureArrivee !== null && (typeof heureArrivee !== 'string' || !/^\d{2}:\d{2}$/.test(heureArrivee))) {
+      return res.status(400).json({ message: 'Heure d\'arrivée invalide.' });
+    }
+    if (jours !== undefined && !Array.isArray(jours)) {
+      return res.status(400).json({ message: 'jours doit être un tableau.' });
+    }
+    if (arretsActifs !== undefined && !Array.isArray(arretsActifs)) {
+      return res.status(400).json({ message: 'arretsActifs doit être un tableau.' });
+    }
 
     if (!(await essaiEstActif(ancienDepart.agenceId))) {
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
@@ -160,7 +202,7 @@ router.patch('/depart/:departId', verifierToken, verifierRole('admin'), async (r
 
     const updateData = {
       busNom, busType,
-      busCapacite:  parseInt(busCapacite),
+      busCapacite:  busCapaciteNum,
       heureDepart,
       heureArrivee: heureArrivee  || null,
       dureeEstimee: dureeEstimee  || null,
@@ -186,8 +228,8 @@ router.patch('/depart/:departId', verifierToken, verifierRole('admin'), async (r
         const sessionUpdate = {
           busNom,
           busType,
-          placesTotal:     parseInt(busCapacite),
-          placesRestantes: Math.max(0, parseInt(busCapacite) - (s.placesVendues || 0)),
+          placesTotal:     busCapaciteNum,
+          placesRestantes: Math.max(0, busCapaciteNum - (s.placesVendues || 0)),
           heureDepart,
           heureArrivee:    heureArrivee || null,
           dureeEstimee:    dureeEstimee || null,
@@ -284,6 +326,11 @@ router.post('/depart/:departId/generer-sessions', verifierToken, verifierRole('a
   const { departId } = req.params;
   const { nbJours = 14 } = req.body;
 
+  const nbJoursNum = Number(nbJours);
+  if (!Number.isInteger(nbJoursNum) || nbJoursNum <= 0 || nbJoursNum > 90) {
+    return res.status(400).json({ message: 'nbJours doit être un entier entre 1 et 90.' });
+  }
+
   try {
     const departDoc = await firestore.collection('departs').doc(departId).get();
     if (!departDoc.exists) return res.status(404).json({ message: 'Départ introuvable.' });
@@ -324,7 +371,7 @@ router.post('/depart/:departId/generer-sessions', verifierToken, verifierRole('a
 
     const sessionsCreees = [];
 
-    for (let i = 0; i < nbJours; i++) {
+    for (let i = 0; i < nbJoursNum; i++) {
       const targetMs    = nowUTC + OFFSET_MS + i * 24 * 60 * 60 * 1000;
       const targetLocal = new Date(targetMs);
       const dateStr     = targetLocal.toISOString().split('T')[0];

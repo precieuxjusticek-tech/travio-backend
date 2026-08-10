@@ -54,6 +54,36 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     !prixParType || Object.keys(prixParType).length === 0) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof villeDepart !== 'string' || villeDepart.trim().length < 2 || villeDepart.length > 100) {
+    return res.status(400).json({ message: 'Ville de départ invalide.' });
+  }
+  if (typeof villeArrivee !== 'string' || villeArrivee.trim().length < 2 || villeArrivee.length > 100) {
+    return res.status(400).json({ message: 'Ville d\'arrivée invalide.' });
+  }
+  if (typeof typeTrajet !== 'string' || typeTrajet.length > 50) {
+    return res.status(400).json({ message: 'Type de trajet invalide.' });
+  }
+  if (typeof prixParType !== 'object' || Array.isArray(prixParType) || Object.values(prixParType).some(v => !Number.isFinite(Number(v)) || Number(v) < 0)) {
+    return res.status(400).json({ message: 'prixParType invalide — toutes les valeurs doivent être des nombres positifs.' });
+  }
+  if (arrets !== undefined && !Array.isArray(arrets)) {
+    return res.status(400).json({ message: 'arrets doit être un tableau.' });
+  }
+  if (pdvDepart !== undefined && !Array.isArray(pdvDepart)) {
+    return res.status(400).json({ message: 'pdvDepart doit être un tableau.' });
+  }
+  if (pdvArrivee !== undefined && !Array.isArray(pdvArrivee)) {
+    return res.status(400).json({ message: 'pdvArrivee doit être un tableau.' });
+  }
+  if (pdvArrets !== undefined && !Array.isArray(pdvArrets)) {
+    return res.status(400).json({ message: 'pdvArrets doit être un tableau.' });
+  }
+  if (limiteBagages !== undefined && limiteBagages !== null && !Number.isFinite(Number(limiteBagages))) {
+    return res.status(400).json({ message: 'limiteBagages invalide.' });
+  }
+  if (fraisExcesBagages !== undefined && fraisExcesBagages !== null && !Number.isFinite(Number(fraisExcesBagages))) {
+    return res.status(400).json({ message: 'fraisExcesBagages invalide.' });
+  }
 
   try {
     const ref  = firestore.collection('trajets').doc();
@@ -210,6 +240,18 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
 
     if (!prixParType || Object.keys(prixParType).length === 0) {
       return res.status(400).json({ message: 'Champs obligatoires manquants.' });
+    }
+    if (typeof prixParType !== 'object' || Array.isArray(prixParType) || Object.values(prixParType).some(v => !Number.isFinite(Number(v)) || Number(v) < 0)) {
+      return res.status(400).json({ message: 'prixParType invalide — toutes les valeurs doivent être des nombres positifs.' });
+    }
+    if (limiteBagages !== undefined && limiteBagages !== null && !Number.isFinite(Number(limiteBagages))) {
+      return res.status(400).json({ message: 'limiteBagages invalide.' });
+    }
+    if (fraisExcesBagages !== undefined && fraisExcesBagages !== null && !Number.isFinite(Number(fraisExcesBagages))) {
+      return res.status(400).json({ message: 'fraisExcesBagages invalide.' });
+    }
+    if (arrets !== undefined && !Array.isArray(arrets)) {
+      return res.status(400).json({ message: 'arrets doit être un tableau.' });
     }
 
     if (!(await essaiEstActif(trajetDocCheck.data().agenceId))) {

@@ -39,6 +39,11 @@ function creerBatchAutoCommit(firestore, limite = 450) {
 // ════════════════════════════════
 router.post('/create', verifierToken, async (req, res) => {
   const uid = req.user.uid;
+
+  if (req.user.agenceId) {
+    return res.status(403).json({ message: 'Vous êtes déjà rattaché à une agence.' });
+  }
+
   const {
     nom, ville, pays, adresse, telephone,
     slogan, description, histoire, anneeCreation,
@@ -51,8 +56,47 @@ router.post('/create', verifierToken, async (req, res) => {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
 
+  if (typeof nom !== 'string' || nom.trim().length < 2 || nom.length > 100) {
+    return res.status(400).json({ message: 'Nom invalide (2 à 100 caractères).' });
+  }
+  if (typeof ville !== 'string' || ville.trim().length < 2 || ville.length > 100) {
+    return res.status(400).json({ message: 'Ville invalide.' });
+  }
+  if (typeof adresse !== 'string' || adresse.trim().length < 5 || adresse.length > 200) {
+    return res.status(400).json({ message: 'Adresse invalide.' });
+  }
+  if (typeof telephone !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephone.replace(/\s/g, ''))) {
+    return res.status(400).json({ message: 'Numéro de téléphone invalide.' });
+  }
+  if (typeof slogan !== 'string' || slogan.length > 150) {
+    return res.status(400).json({ message: 'Slogan invalide (max 150 caractères).' });
+  }
+  if (typeof description !== 'string' || description.length > 2000) {
+    return res.status(400).json({ message: 'Description invalide (max 2000 caractères).' });
+  }
+  if (anneeCreation !== undefined && anneeCreation !== null) {
+    const annee = Number(anneeCreation);
+    if (!Number.isInteger(annee) || annee < 1900 || annee > new Date().getFullYear()) {
+      return res.status(400).json({ message: 'Année de création invalide.' });
+    }
+  }
+  const champsTexteLibre = { histoire, point1, point2, point3, engagements, regles, politiqueAnnulation, delaiFormalite };
+  for (const [cle, valeur] of Object.entries(champsTexteLibre)) {
+    if (valeur !== undefined && valeur !== null && (typeof valeur !== 'string' || valeur.length > 1000)) {
+      return res.status(400).json({ message: `Champ ${cle} invalide (texte, max 1000 caractères).` });
+    }
+  }
+  if (photosBase64 !== undefined && !Array.isArray(photosBase64)) {
+    return res.status(400).json({ message: 'photosBase64 doit être un tableau.' });
+  }
   if (photosBase64 && photosBase64.length > 5) {
     return res.status(400).json({ message: 'Maximum 5 photos autorisées.' });
+  }
+  if (photosBase64 && photosBase64.some(p => typeof p !== 'string' || !p.startsWith('data:image/'))) {
+    return res.status(400).json({ message: 'Une ou plusieurs photos sont invalides.' });
+  }
+  if (logoBase64 !== undefined && logoBase64 !== null && (typeof logoBase64 !== 'string' || !logoBase64.startsWith('data:image/'))) {
+    return res.status(400).json({ message: 'Logo invalide.' });
   }
 
   try {
@@ -87,7 +131,7 @@ router.post('/create', verifierToken, async (req, res) => {
       slogan,
       description,
       histoire:      histoire      || null,
-      anneeCreation: anneeCreation || null,
+      anneeCreation: anneeCreation !== undefined && anneeCreation !== null ? Number(anneeCreation) : null,
       point1:        point1        || null,
       point2:        point2        || null,
       point3:        point3        || null,
@@ -173,12 +217,42 @@ router.patch('/:agenceId', verifierToken, verifierRole('admin'), async (req, res
   if (!nom || !slogan || !description || !ville || !adresse || !telephone) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof nom !== 'string' || nom.trim().length < 2 || nom.length > 100) {
+    return res.status(400).json({ message: 'Nom invalide.' });
+  }
+  if (typeof ville !== 'string' || ville.trim().length < 2 || ville.length > 100) {
+    return res.status(400).json({ message: 'Ville invalide.' });
+  }
+  if (typeof adresse !== 'string' || adresse.trim().length < 5 || adresse.length > 200) {
+    return res.status(400).json({ message: 'Adresse invalide.' });
+  }
+  if (typeof telephone !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephone.replace(/\s/g, ''))) {
+    return res.status(400).json({ message: 'Numéro de téléphone invalide.' });
+  }
+  if (typeof slogan !== 'string' || slogan.length > 150) {
+    return res.status(400).json({ message: 'Slogan invalide (max 150 caractères).' });
+  }
+  if (typeof description !== 'string' || description.length > 2000) {
+    return res.status(400).json({ message: 'Description invalide (max 2000 caractères).' });
+  }
+  if (anneeCreation !== undefined && anneeCreation !== null) {
+    const annee = Number(anneeCreation);
+    if (!Number.isInteger(annee) || annee < 1900 || annee > new Date().getFullYear()) {
+      return res.status(400).json({ message: 'Année de création invalide.' });
+    }
+  }
+  const champsTexteLibre = { histoire, point1, point2, point3, engagements, regles, politiqueAnnulation, delaiFormalite };
+  for (const [cle, valeur] of Object.entries(champsTexteLibre)) {
+    if (valeur !== undefined && valeur !== null && (typeof valeur !== 'string' || valeur.length > 1000)) {
+      return res.status(400).json({ message: `Champ ${cle} invalide (texte, max 1000 caractères).` });
+    }
+  }
 
   try {
     const updateData = {
       nom, slogan, description, ville, adresse, telephone,
       histoire:      histoire      || null,
-      anneeCreation: anneeCreation || null,
+      anneeCreation: anneeCreation !== undefined && anneeCreation !== null ? Number(anneeCreation) : null,
       point1:        point1        || null,
       point2:        point2        || null,
       point3:        point3        || null,
@@ -211,6 +285,22 @@ router.patch('/:agenceId/images', verifierToken, verifierRole('admin'), async (r
   }
 
   const { logoBase64, photosToAdd, photosToDelete } = req.body;
+
+  if (logoBase64 !== undefined && logoBase64 !== null && (typeof logoBase64 !== 'string' || !logoBase64.startsWith('data:image/'))) {
+    return res.status(400).json({ message: 'Logo invalide.' });
+  }
+  if (photosToAdd !== undefined && !Array.isArray(photosToAdd)) {
+    return res.status(400).json({ message: 'photosToAdd doit être un tableau.' });
+  }
+  if (photosToAdd && photosToAdd.some(p => typeof p !== 'string' || !p.startsWith('data:image/'))) {
+    return res.status(400).json({ message: 'Une ou plusieurs photos à ajouter sont invalides.' });
+  }
+  if (photosToDelete !== undefined && !Array.isArray(photosToDelete)) {
+    return res.status(400).json({ message: 'photosToDelete doit être un tableau.' });
+  }
+  if (photosToDelete && photosToDelete.some(p => typeof p !== 'string')) {
+    return res.status(400).json({ message: 'Liste de photos à supprimer invalide.' });
+  }
 
   try {
     const doc = await firestore.collection('agences').doc(agenceId).get();

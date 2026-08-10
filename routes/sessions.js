@@ -88,15 +88,30 @@ router.patch('/session/:sessionId', verifierToken, verifierRole('admin'), async 
     }
 
     const updateData = {};
-    if (arretsActifs !== undefined) updateData.arretsActifs = arretsActifs;
+    if (arretsActifs !== undefined) {
+      if (!Array.isArray(arretsActifs)) {
+        return res.status(400).json({ message: 'arretsActifs doit être un tableau.' });
+      }
+      updateData.arretsActifs = arretsActifs;
+    }
     if (heureDepart !== undefined) {
       if (heureDepart && !/^\d{2}:\d{2}$/.test(heureDepart)) {
         return res.status(400).json({ message: 'Heure de départ invalide.' });
       }
       updateData.heureDepart = heureDepart || null;
     }
-    if (heureArrivee !== undefined) updateData.heureArrivee = heureArrivee;
-    if (dureeEstimee !== undefined) updateData.dureeEstimee = dureeEstimee;
+    if (heureArrivee !== undefined) {
+      if (heureArrivee && (typeof heureArrivee !== 'string' || !/^\d{2}:\d{2}$/.test(heureArrivee))) {
+        return res.status(400).json({ message: 'Heure d\'arrivée invalide.' });
+      }
+      updateData.heureArrivee = heureArrivee || null;
+    }
+    if (dureeEstimee !== undefined) {
+      if (dureeEstimee !== null && !Number.isFinite(Number(dureeEstimee))) {
+        return res.status(400).json({ message: 'Durée estimée invalide.' });
+      }
+      updateData.dureeEstimee = dureeEstimee !== null ? Number(dureeEstimee) : null;
+    }
     updateData.updatedAt = new Date().toISOString();
 
     await firestore.collection('sessions').doc(sessionId).update(updateData);
@@ -119,6 +134,9 @@ router.patch('/session/:sessionId/incident', verifierToken, verifierRole('admin'
   const causesValides = ['panne', 'chauffeur_absent', 'accident', 'autre'];
   if (!cause || !causesValides.includes(cause)) {
     return res.status(400).json({ message: 'Cause invalide.' });
+  }
+  if (details !== undefined && details !== null && (typeof details !== 'string' || details.length > 500)) {
+    return res.status(400).json({ message: 'Détails invalides (max 500 caractères).' });
   }
 
   try {
@@ -208,7 +226,9 @@ router.get('/session/:sessionId/reservations', verifierToken, verifierRole('admi
 router.post('/session/:sessionId/reaffecter', verifierToken, verifierRole('admin'), async (req, res) => {
   const { sessionId } = req.params;
   const { nouveauDepartId } = req.body;
-  if (!nouveauDepartId) return res.status(400).json({ message: 'nouveauDepartId manquant.' });
+  if (!nouveauDepartId || typeof nouveauDepartId !== 'string') {
+    return res.status(400).json({ message: 'nouveauDepartId invalide.' });
+  }
 
   try {
     // ── Lectures préalables non sensibles à la concurrence (config quasi-statique) ──

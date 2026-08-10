@@ -58,6 +58,38 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
   if (!agenceId || !trajetId || !sessionId || !dateDepart || !prenomPassager || !prixTotal) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof prenomPassager !== 'string' || prenomPassager.trim().length < 2 || prenomPassager.length > 100) {
+    return res.status(400).json({ message: 'Prénom du passager invalide.' });
+  }
+  if (nomPassager !== undefined && nomPassager !== null && (typeof nomPassager !== 'string' || nomPassager.length > 100)) {
+    return res.status(400).json({ message: 'Nom du passager invalide.' });
+  }
+  if (telephonePassager !== undefined && telephonePassager !== null && telephonePassager !== '' && (typeof telephonePassager !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephonePassager.replace(/\s/g, '')))) {
+    return res.status(400).json({ message: 'Téléphone du passager invalide.' });
+  }
+  if (typeof dateDepart !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateDepart)) {
+    return res.status(400).json({ message: 'Date de départ invalide.' });
+  }
+  const nbPassagersNum = nbPassagers !== undefined ? Number(nbPassagers) : 1;
+  if (!Number.isInteger(nbPassagersNum) || nbPassagersNum <= 0 || nbPassagersNum > 50) {
+    return res.status(400).json({ message: 'nbPassagers invalide.' });
+  }
+  const prixTotalNum = Number(prixTotal);
+  if (!Number.isFinite(prixTotalNum) || prixTotalNum < 0) {
+    return res.status(400).json({ message: 'prixTotal invalide.' });
+  }
+  if (prixBillet !== undefined && prixBillet !== null && !Number.isFinite(Number(prixBillet))) {
+    return res.status(400).json({ message: 'prixBillet invalide.' });
+  }
+  if (prixBagages !== undefined && prixBagages !== null && !Number.isFinite(Number(prixBagages))) {
+    return res.status(400).json({ message: 'prixBagages invalide.' });
+  }
+  if (bagages !== undefined && bagages !== null && !Number.isFinite(Number(bagages))) {
+    return res.status(400).json({ message: 'bagages invalide.' });
+  }
+  if (passagers !== undefined && !Array.isArray(passagers)) {
+    return res.status(400).json({ message: 'passagers doit être un tableau.' });
+  }
 
   try {
     let pdvNomVente = 'Vente directe — Siège';
@@ -83,7 +115,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     }
     const { segments, nbSegments } = segInfo;
 
-    const nbBillets = nbPassagers || 1;
+    const nbBillets = nbPassagersNum;
     const resaRef = firestore.collection('reservations').doc();
     const resaId  = resaRef.id;
 
@@ -144,7 +176,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
           prixBagages:       prixBagages  || 0,
           passagers:         passagers    || [],
           nbPassagers:       nbBillets,
-          prixTotal,
+          prixTotal:         prixTotalNum,
           remarques:         remarques    || null,
           pdvEmbarquementId:    req.body.pdvEmbarquementId    || null,
           pdvEmbarquementNom:   req.body.pdvEmbarquementNom   || null,
@@ -563,6 +595,25 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
   if (!prenomPassager || !prixTotal) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof prenomPassager !== 'string' || prenomPassager.trim().length < 2 || prenomPassager.length > 100) {
+    return res.status(400).json({ message: 'Prénom du passager invalide.' });
+  }
+  if (nomPassager !== undefined && nomPassager !== null && (typeof nomPassager !== 'string' || nomPassager.length > 100)) {
+    return res.status(400).json({ message: 'Nom du passager invalide.' });
+  }
+  if (telephonePassager !== undefined && telephonePassager !== null && telephonePassager !== '' && (typeof telephonePassager !== 'string' || !/^\+?[0-9]{6,15}$/.test(telephonePassager.replace(/\s/g, '')))) {
+    return res.status(400).json({ message: 'Téléphone du passager invalide.' });
+  }
+  const prixTotalNum = Number(prixTotal);
+  if (!Number.isFinite(prixTotalNum) || prixTotalNum < 0) {
+    return res.status(400).json({ message: 'prixTotal invalide.' });
+  }
+  if (nbPassagers !== undefined && (!Number.isInteger(Number(nbPassagers)) || Number(nbPassagers) <= 0)) {
+    return res.status(400).json({ message: 'nbPassagers invalide.' });
+  }
+  if (passagers !== undefined && !Array.isArray(passagers)) {
+    return res.status(400).json({ message: 'passagers doit être un tableau.' });
+  }
 
   try {
     const doc = await firestore.collection('reservations').doc(resaId).get();
@@ -606,7 +657,7 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
 
     const nouveauMontee   = arretMontee   !== undefined ? arretMontee   : r.arretMontee;
     const nouveauDescente = arretDescente !== undefined ? arretDescente : r.arretDescente;
-    const nouveauNb       = nbPassagers   !== undefined ? nbPassagers   : r.nbPassagers;
+    const nouveauNb       = nbPassagers   !== undefined ? Number(nbPassagers) : r.nbPassagers;
 
     const segmentsOntChange =
       nouveauMontee   !== r.arretMontee ||
@@ -625,7 +676,7 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
       arretDescente:     nouveauDescente,
       nbPassagers:       nouveauNb,
       passagers:         passagers         || r.passagers,
-      prixTotal,
+      prixTotal:         prixTotalNum,
       remarques:         remarques         !== undefined ? remarques : r.remarques,
       routeLabel:        routeLabel        || r.routeLabel,
       pdvEmbarquementId:    pdvEmbarquementId    !== undefined ? pdvEmbarquementId    : r.pdvEmbarquementId,

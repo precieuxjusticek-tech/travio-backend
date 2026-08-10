@@ -15,6 +15,18 @@ router.post('/register', async (req, res) => {
   if (!prenom || !nom || !email || !password) {
     return res.status(400).json({ message: 'Tous les champs sont obligatoires.' });
   }
+  if (typeof prenom !== 'string' || prenom.trim().length < 2 || prenom.length > 50) {
+    return res.status(400).json({ message: 'Prénom invalide (2 à 50 caractères).' });
+  }
+  if (typeof nom !== 'string' || nom.trim().length < 2 || nom.length > 50) {
+    return res.status(400).json({ message: 'Nom invalide (2 à 50 caractères).' });
+  }
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: 'Email invalide.' });
+  }
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ message: 'Le mot de passe doit faire au moins 6 caractères.' });
+  }
 
   try {
     const userRecord = await auth.createUser({
@@ -88,8 +100,8 @@ router.post('/login', verifierToken, async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ message: 'Email manquant.' });
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: 'Email invalide.' });
   }
 
   try {

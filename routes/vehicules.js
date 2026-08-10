@@ -44,11 +44,27 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
   if (!agenceId || !nom || !type || !capacite) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof nom !== 'string' || nom.trim().length < 1 || nom.length > 100) {
+    return res.status(400).json({ message: 'Nom du véhicule invalide.' });
+  }
+  if (typeof type !== 'string' || type.length > 50) {
+    return res.status(400).json({ message: 'Type de véhicule invalide.' });
+  }
+  const capaciteNum = Number(capacite);
+  if (!Number.isInteger(capaciteNum) || capaciteNum <= 0 || capaciteNum > 200) {
+    return res.status(400).json({ message: 'Capacité invalide.' });
+  }
+  if (chauffeurNom !== undefined && chauffeurNom !== null && (typeof chauffeurNom !== 'string' || chauffeurNom.length > 100)) {
+    return res.status(400).json({ message: 'Nom du chauffeur invalide.' });
+  }
+  if (chauffeurTel !== undefined && chauffeurTel !== null && chauffeurTel !== '' && (typeof chauffeurTel !== 'string' || !/^\+?[0-9]{6,15}$/.test(chauffeurTel.replace(/\s/g, '')))) {
+    return res.status(400).json({ message: 'Téléphone du chauffeur invalide.' });
+  }
   try {
     const ref = firestore.collection('vehicules').doc();
     const vehiculeData = {
       id: ref.id, agenceId, nom, type,
-      capacite: parseInt(capacite),
+      capacite: capaciteNum,
       chauffeurNom: chauffeurNom || null,
       chauffeurTel: chauffeurTel || null,
       actif: true,
@@ -108,6 +124,22 @@ router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, r
   if (!nom || !type || !capacite) {
     return res.status(400).json({ message: 'Champs obligatoires manquants.' });
   }
+  if (typeof nom !== 'string' || nom.trim().length < 1 || nom.length > 100) {
+    return res.status(400).json({ message: 'Nom du véhicule invalide.' });
+  }
+  if (typeof type !== 'string' || type.length > 50) {
+    return res.status(400).json({ message: 'Type de véhicule invalide.' });
+  }
+  const capaciteNum = Number(capacite);
+  if (!Number.isInteger(capaciteNum) || capaciteNum <= 0 || capaciteNum > 200) {
+    return res.status(400).json({ message: 'Capacité invalide.' });
+  }
+  if (chauffeurNom !== undefined && chauffeurNom !== null && (typeof chauffeurNom !== 'string' || chauffeurNom.length > 100)) {
+    return res.status(400).json({ message: 'Nom du chauffeur invalide.' });
+  }
+  if (chauffeurTel !== undefined && chauffeurTel !== null && chauffeurTel !== '' && (typeof chauffeurTel !== 'string' || !/^\+?[0-9]{6,15}$/.test(chauffeurTel.replace(/\s/g, '')))) {
+    return res.status(400).json({ message: 'Téléphone du chauffeur invalide.' });
+  }
   try {
     const vDoc = await firestore.collection('vehicules').doc(vehiculeId).get();
     if (!vDoc.exists) return res.status(404).json({ message: 'Véhicule introuvable.' });
@@ -118,7 +150,7 @@ router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, r
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
-    const updateData = { nom, type, capacite: parseInt(capacite), chauffeurNom: chauffeurNom || null, chauffeurTel: chauffeurTel || null, updatedAt: new Date().toISOString() };
+    const updateData = { nom, type, capacite: capaciteNum, chauffeurNom: chauffeurNom || null, chauffeurTel: chauffeurTel || null, updatedAt: new Date().toISOString() };
     await firestore.collection('vehicules').doc(vehiculeId).update(updateData);
 
     const departsSnap = await firestore.collection('departs').where('vehiculeId', '==', vehiculeId).get();
@@ -127,7 +159,7 @@ router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, r
 
     for (const departDoc of departsSnap.docs) {
       await batch.update(departDoc.ref, {
-        busNom: nom, busType: type, busCapacite: parseInt(capacite),
+        busNom: nom, busType: type, busCapacite: capaciteNum,
         updatedAt: new Date().toISOString(),
       });
       const sessionsSnap = await firestore.collection('sessions')
@@ -137,8 +169,8 @@ router.patch('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, r
         if (s.statut === 'annulée') continue;
         await batch.update(sDoc.ref, {
           busNom: nom,
-          placesTotal: parseInt(capacite),
-          placesRestantes: Math.max(0, parseInt(capacite) - (s.placesVendues || 0)),
+          placesTotal: capaciteNum,
+          placesRestantes: Math.max(0, capaciteNum - (s.placesVendues || 0)),
           updatedAt: new Date().toISOString(),
         });
       }
