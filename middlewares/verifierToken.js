@@ -1,9 +1,15 @@
 const { auth, firestore } = require('../firebase');
+const crypto = require('crypto');
+
+function comparaisonSecurisee(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 async function verifierToken(req, res, next) {
 
   // Laisse passer le cron interne (clé partagée, jamais un vrai utilisateur)
-  if (process.env.INTERNAL_CRON_KEY && req.headers['x-internal-key'] === process.env.INTERNAL_CRON_KEY) {
+  if (process.env.INTERNAL_CRON_KEY && comparaisonSecurisee(req.headers['x-internal-key'], process.env.INTERNAL_CRON_KEY)) {
     req.user = { internal: true, role: 'system' };
     return next();
   }

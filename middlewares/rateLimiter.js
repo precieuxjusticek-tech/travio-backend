@@ -18,4 +18,10 @@ const limiterAuth = rateLimit({
   message: { message: 'Trop de tentatives, réessayez dans 15 minutes.' },
 });
 
-module.exports = { limiterGlobal, limiterAuth };
+const limiterSupport = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { message: 'Trop de messages envoyés, réessayez plus tard.' },
+});
+
+module.exports = { limiterGlobal, limiterAuth, limiterSupport };

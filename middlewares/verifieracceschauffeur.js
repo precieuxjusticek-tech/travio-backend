@@ -1,4 +1,10 @@
 const { firestore } = require('../firebase');
+const crypto = require('crypto');
+
+function comparaisonSecurisee(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 // ════════════════════════════════
 //  MIDDLEWARE — Accès chauffeur (lien partagé, sans compte)
@@ -20,7 +26,7 @@ async function verifierAccesChauffeur(req, res, next) {
 
     const agence = agenceDoc.data();
 
-    if (!agence.chauffeurAccessToken || agence.chauffeurAccessToken !== token) {
+    if (!agence.chauffeurAccessToken || !comparaisonSecurisee(agence.chauffeurAccessToken, token)) {
       return res.status(401).json({ message: 'Accès refusé — lien invalide ou révoqué.' });
     }
 

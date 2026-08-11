@@ -7,6 +7,7 @@ const { todayBrazza } = require('../helpers/dates');
 const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
+const { creerBatchAutoCommit } = require('../helpers/batch');
 
 // ════════════════════════════════
 //  SESSIONS D'UN DÉPART
@@ -445,12 +446,12 @@ router.post('/session/:sessionId/annuler-toutes', verifierToken, verifierRole('a
       .where('statut', '!=', 'annulée')
       .get();
 
-    const batch = firestore.batch();
+    const batch = creerBatchAutoCommit(firestore);
     const now = new Date().toISOString();
     let totalRembourse = 0;
     const pdvIncrements = {};
 
-    resasSnap.docs.forEach(rDoc => {
+    for (const rDoc of resasSnap.docs) {
       const r = rDoc.data();
       const prixTotal = Number(r.prixTotal || 0);
       let frais = prixTotal, rembourse = 0;
@@ -460,21 +461,21 @@ router.post('/session/:sessionId/annuler-toutes', verifierToken, verifierRole('a
         rembourse = prixTotal - frais;
       }
       totalRembourse += rembourse;
-      batch.update(rDoc.ref, {
+      await batch.update(rDoc.ref, {
         statut: 'annulée', annuleeAt: now,
         fraisRetenus: frais, montantRembourse: rembourse,
       });
       if (r.pdvId) pdvIncrements[r.pdvId] = (pdvIncrements[r.pdvId] || 0) + (r.nbPassagers || 1);
-    });
+    }
 
     for (const [pdvId, nb] of Object.entries(pdvIncrements)) {
       const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
       if (pdvDoc.exists) {
-        batch.update(pdvDoc.ref, { annulations: (pdvDoc.data().annulations || 0) + nb, updatedAt: now });
+        await batch.update(pdvDoc.ref, { annulations: (pdvDoc.data().annulations || 0) + nb, updatedAt: now });
       }
     }
 
-    await batch.commit();
+    await batch.commitFinal();
 
     return res.status(200).json({ message: `${resasSnap.size} réservation(s) annulée(s).`, nbAnnulees: resasSnap.size, totalRembourse });
 

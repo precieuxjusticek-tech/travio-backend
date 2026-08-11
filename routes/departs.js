@@ -7,32 +7,8 @@ const { todayBrazza } = require('../helpers/dates');
 const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservations } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
-const { verifierRole } = require('../middlewares/verifierRole');
-
-// ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
-function creerBatchAutoCommit(firestore, limite = 450) {
-  let batch = firestore.batch();
-  let count = 0;
-  const commits = [];
-
-  async function flushSiNecessaire() {
-    if (count >= limite) {
-      commits.push(batch.commit());
-      batch = firestore.batch();
-      count = 0;
-    }
-  }
-
-  return {
-    async set(ref, data) { batch.set(ref, data); count++; await flushSiNecessaire(); },
-    async update(ref, data) { batch.update(ref, data); count++; await flushSiNecessaire(); },
-    async delete(ref) { batch.delete(ref); count++; await flushSiNecessaire(); },
-    async commitFinal() {
-      if (count > 0) commits.push(batch.commit());
-      await Promise.all(commits);
-    },
-  };
-}
+const { verifierRole, verifierRoleOuSysteme } = require('../middlewares/verifierRole');
+const { creerBatchAutoCommit } = require('../helpers/batch');
 
 // ════════════════════════════════
 //  CRÉER UN DÉPART
@@ -322,7 +298,7 @@ router.patch('/depart/:departId/statut', verifierToken, verifierRole('admin'), a
 //  GÉNÉRER LES SESSIONS AUTOMATIQUEMENT
 //  POST /depart/:departId/generer-sessions
 // ════════════════════════════════
-router.post('/depart/:departId/generer-sessions', verifierToken, verifierRole('admin'), async (req, res) => {
+router.post('/depart/:departId/generer-sessions', verifierToken, verifierRoleOuSysteme('admin'), async (req, res) => {
   const { departId } = req.params;
   const { nbJours = 14 } = req.body;
 
@@ -477,9 +453,8 @@ router.delete('/depart/:departId', verifierToken, verifierRole('admin'), async (
       }
     }
 
+    await batch.delete(firestore.collection('departs').doc(departId));
     await batch.commitFinal();
-
-    await firestore.collection('departs').doc(departId).delete();
 
     return res.status(200).json({
       message: `Bus supprimé. ${futuresSupprimees} session(s) future(s) supprimée(s), ${passeesMarcquees} session(s) passée(s) conservée(s) dans l'historique.`,

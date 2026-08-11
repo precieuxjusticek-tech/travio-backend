@@ -9,7 +9,7 @@ const { getSegmentsTrajet } = require('./helpers/segments');
 const { estAgenceExemptee, essaiEstActif } = require('./helpers/essai');
 const { verifierToken } = require('./middlewares/verifierToken');
 const { sanitizeInput } = require('./helpers/sanitize');
-const { limiterGlobal, limiterAuth } = require('./middlewares/rateLimiter');
+const { limiterGlobal, limiterAuth, limiterSupport } = require('./middlewares/rateLimiter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,9 +52,9 @@ app.use('/', require('./routes/departs'));
 app.use('/', require('./routes/sessions'));
 app.use('/reservations', require('./routes/reservations'));
 app.use('/colis', require('./routes/colis'));
-app.use('/support', require('./routes/support'));
+app.use('/support', limiterSupport, require('./routes/support'));
 app.use('/vehicule', require('./routes/vehicules'));
-app.use('/admin', require('./routes/admin'));
+// app.use('/admin', require('./routes/admin'));
 
 // ════════════════════════════════
 //  RÉCUPÉRER LES TRAJETS
@@ -178,6 +178,14 @@ cron.schedule('*/10 * * * *', async () => {
   } catch (err) {
     console.error('❌ Erreur auto-ping :', err.message);
   }
+});
+
+// ════════════════════════════════
+//  GESTIONNAIRE D'ERREURS GLOBAL (filet de sécurité)
+// ════════════════════════════════
+app.use((err, req, res, next) => {
+  console.error('Erreur non gérée :', err);
+  res.status(500).json({ message: 'Erreur serveur, réessayez.' });
 });
 
 // ── Démarrage du serveur ──

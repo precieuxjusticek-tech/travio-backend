@@ -8,31 +8,7 @@ const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsTrajet } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
-
-// ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
-function creerBatchAutoCommit(firestore, limite = 450) {
-  let batch = firestore.batch();
-  let count = 0;
-  const commits = [];
-
-  async function flushSiNecessaire() {
-    if (count >= limite) {
-      commits.push(batch.commit());
-      batch = firestore.batch();
-      count = 0;
-    }
-  }
-
-  return {
-    async set(ref, data) { batch.set(ref, data); count++; await flushSiNecessaire(); },
-    async update(ref, data) { batch.update(ref, data); count++; await flushSiNecessaire(); },
-    async delete(ref) { batch.delete(ref); count++; await flushSiNecessaire(); },
-    async commitFinal() {
-      if (count > 0) commits.push(batch.commit());
-      await Promise.all(commits);
-    },
-  };
-}
+const { creerBatchAutoCommit } = require('../helpers/batch');
 
 // ════════════════════════════════
 //  CRÉER UN TRAJET

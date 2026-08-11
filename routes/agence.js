@@ -7,37 +7,13 @@ const { cloudinary, uploadToCloudinary } = require('../config/cloudinary');
 const { calculerDateFinEssai, estAgenceExemptee } = require('../helpers/essai');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
-
-// ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
-function creerBatchAutoCommit(firestore, limite = 450) {
-  let batch = firestore.batch();
-  let count = 0;
-  const commits = [];
-
-  async function flushSiNecessaire() {
-    if (count >= limite) {
-      commits.push(batch.commit());
-      batch = firestore.batch();
-      count = 0;
-    }
-  }
-
-  return {
-    async set(ref, data) { batch.set(ref, data); count++; await flushSiNecessaire(); },
-    async update(ref, data) { batch.update(ref, data); count++; await flushSiNecessaire(); },
-    async delete(ref) { batch.delete(ref); count++; await flushSiNecessaire(); },
-    async commitFinal() {
-      if (count > 0) commits.push(batch.commit());
-      await Promise.all(commits);
-    },
-  };
-}
+const { creerBatchAutoCommit } = require('../helpers/batch');
 
 // ════════════════════════════════
 //  CRÉER UNE AGENCE
 //  POST /agence/create
 // ════════════════════════════════
-router.post('/create', verifierToken, async (req, res) => {
+router.post('/create', verifierToken, verifierRole('admin'), async (req, res) => {
   const uid = req.user.uid;
 
   if (req.user.agenceId) {
@@ -473,7 +449,8 @@ router.patch('/:agenceId/types-billet', verifierToken, verifierRole('admin'), as
         }
       }
 
-      if (trajetsImpactes > 0) await batch.commitFinal();
+      let resultatBatch = { succes: true };
+      if (trajetsImpactes > 0) resultatBatch = await batch.commitFinal();
     }
 
     return res.status(200).json({

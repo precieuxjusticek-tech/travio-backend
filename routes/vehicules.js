@@ -8,31 +8,7 @@ const { checkEssai } = require('../helpers/essai');
 const { verifierImpactReservationsVehicule } = require('../helpers/reservations-impact');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
-
-// ── Helper : batch auto-découpé pour rester sous la limite de 500 ops ──
-function creerBatchAutoCommit(firestore, limite = 450) {
-  let batch = firestore.batch();
-  let count = 0;
-  const commits = [];
-
-  async function flushSiNecessaire() {
-    if (count >= limite) {
-      commits.push(batch.commit());
-      batch = firestore.batch();
-      count = 0;
-    }
-  }
-
-  return {
-    async set(ref, data) { batch.set(ref, data); count++; await flushSiNecessaire(); },
-    async update(ref, data) { batch.update(ref, data); count++; await flushSiNecessaire(); },
-    async delete(ref) { batch.delete(ref); count++; await flushSiNecessaire(); },
-    async commitFinal() {
-      if (count > 0) commits.push(batch.commit());
-      await Promise.all(commits);
-    },
-  };
-}
+const { creerBatchAutoCommit } = require('../helpers/batch');
 
 // ════════════════════════════════
 //  CRÉER UN VÉHICULE
@@ -93,6 +69,7 @@ router.get('/all', verifierToken, verifierRole('admin'), async (req, res) => {
       .where('agenceId', '==', agenceId).orderBy('createdAt', 'desc').get();
     return res.status(200).json({ vehicules: snapshot.docs.map(d => d.data()) });
   } catch (err) {
+    console.error('Erreur récupération véhicules :', err);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
@@ -110,6 +87,7 @@ router.get('/:vehiculeId', verifierToken, verifierRole('admin'), async (req, res
     }
     return res.status(200).json(doc.data());
   } catch (err) {
+    console.error('Erreur récupération véhicule :', err);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
