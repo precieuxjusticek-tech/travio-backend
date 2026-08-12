@@ -8,6 +8,12 @@ const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
 
+function genererCodeBillet() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return `VTK-${code}`;
+}
 async function enrichirBusSupprime(reservations) {
   const sessionIds = [...new Set(reservations.map(r => r.sessionId).filter(Boolean))];
   if (sessionIds.length === 0) return reservations;
@@ -118,6 +124,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     const nbBillets = nbPassagersNum;
     const resaRef = firestore.collection('reservations').doc();
     const resaId  = resaRef.id;
+    const codeControle = genererCodeBillet();
 
     try {
       await firestore.runTransaction(async (t) => {
@@ -157,6 +164,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
 
         t.set(resaRef, {
           id: resaId,
+          codeControle,
           agenceId, pdvId: pdvId || null, pdvVendeurNom: pdvNomVente, trajetId, sessionId,
           typeTrajet:        typeTrajet   || 'direct',
           routeLabel:        routeLabel   || null,
@@ -205,6 +213,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       message:       'Réservation créée avec succès.',
       reservationId: resaId,
       id:            resaId,
+      codeControle,
     });
 
   } catch (err) {
