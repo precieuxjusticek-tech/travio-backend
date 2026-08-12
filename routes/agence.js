@@ -126,9 +126,44 @@ router.post('/create', verifierToken, verifierRole('admin'), async (req, res) =>
       createdAt:     new Date().toISOString(),
     };
 
-    await agenceRef.set(agenceData);
+    try {
+      await firestore.runTransaction(async (t) => {
+        const userRef  = firestore.collection('users').doc(uid);
+        const userSnap = await t.get(userRef);
 
-    await firestore.collection('users').doc(uid).update({ agenceId });
+        // Revérification fraîche et atomique — protège contre une double soumission concurrente
+        if (userSnap.exists && userSnap.data().agenceId) {
+          const err = new Error('Vous êtes déjà rattaché à une agence.');
+          err.code = 403;
+          throw err;
+        }
+
+        t.set(agenceRef, agenceData);
+        t.update(userRef, { agenceId });
+      });
+    } catch (txErr) {
+      if (txErr.code === 403) {
+        // Une autre requête concurrente a déjà créé l'agence entre-temps —
+        // on nettoie les fichiers Cloudinary déjà uploadés pour cette tentative perdante.
+        const cleanupTargets = [];
+        if (logoUrl) cleanupTargets.push(logoUrl);
+        cleanupTargets.push(...photosUrls);
+
+        for (const url of cleanupTargets) {
+          const match = url.match(/upload\/(?:v\d+\/)?(.+)\.\w+$/);
+          if (match) {
+            try {
+              await cloudinary.uploader.destroy(match[1]);
+            } catch (cleanupErr) {
+              console.warn('Nettoyage Cloudinary échoué pour :', url, cleanupErr.message);
+            }
+          }
+        }
+
+        return res.status(403).json({ message: txErr.message });
+      }
+      throw txErr;
+    }
 
     return res.status(201).json({
       message: 'Agence créée avec succès.',

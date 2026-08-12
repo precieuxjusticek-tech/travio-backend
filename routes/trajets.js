@@ -455,12 +455,16 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
 
       for (const departDoc of departsSnap.docs) {
         const depart = departDoc.data();
+        // On ne marque "désactivé par le trajet" que si le bus était actif avant —
+        // ça permet de ne pas réactiver par erreur un bus déjà désactivé manuellement.
+        const etaitActifAvant = depart.actif !== false;
 
         await batch.update(departDoc.ref, {
           actif: false,
+          ...(etaitActifAvant && { desactiveParTrajet: true }),
           updatedAt: new Date().toISOString(),
         });
-        busDesactives++;
+        if (etaitActifAvant) busDesactives++;
 
         const sessionsSnap = await firestore.collection('sessions')
           .where('departId', '==', depart.id)
@@ -485,11 +489,17 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
 
       const batch = creerBatchAutoCommit(firestore);
       for (const doc of departsSnap.docs) {
-        await batch.update(doc.ref, {
-          actif: true,
-          updatedAt: new Date().toISOString(),
-        });
-        busDesactives++;
+        const depart = doc.data();
+        // On ne réactive que les bus désactivés à cause de ce trajet —
+        // ceux désactivés manuellement par l'admin restent inchangés.
+        if (depart.desactiveParTrajet === true) {
+          await batch.update(doc.ref, {
+            actif: true,
+            desactiveParTrajet: false,
+            updatedAt: new Date().toISOString(),
+          });
+          busDesactives++;
+        }
       }
       await batch.commitFinal();
     }

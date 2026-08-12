@@ -7,12 +7,31 @@ const { checkEssai } = require('../helpers/essai');
 const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
+const { FieldValue } = require('firebase-admin/firestore');
 
 function genererCodeBillet() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return `VTK-${code}`;
+}
+
+// Génère un code de billet en vérifiant son unicité en base (dans la transaction, pour éviter toute course).
+async function genererCodeBilletUnique(t) {
+  let code, dejaUtilise = true;
+  let tentatives = 0;
+  while (dejaUtilise && tentatives < 10) {
+    code = genererCodeBillet();
+    const snap = await t.get(
+      firestore.collection('reservations').where('codeControle', '==', code).limit(1)
+    );
+    dejaUtilise = !snap.empty;
+    tentatives++;
+  }
+  if (dejaUtilise) {
+    throw new Error('Impossible de générer un code de billet unique après plusieurs tentatives.');
+  }
+  return code;
 }
 async function enrichirBusSupprime(reservations) {
   const sessionIds = [...new Set(reservations.map(r => r.sessionId).filter(Boolean))];
@@ -124,7 +143,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     const nbBillets = nbPassagersNum;
     const resaRef = firestore.collection('reservations').doc();
     const resaId  = resaRef.id;
-    const codeControle = genererCodeBillet();
+    let codeControle;
 
     try {
       await firestore.runTransaction(async (t) => {
@@ -143,6 +162,8 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
           err.code = 409;
           throw err;
         }
+
+        codeControle = await genererCodeBilletUnique(t);
 
         const placesVenduesSegments = session.placesVenduesSegments && session.placesVenduesSegments.length === nbSegments
           ? session.placesVenduesSegments
@@ -397,14 +418,13 @@ router.patch('/:resaId/annuler', verifierToken, async (req, res) => {
     });
 
     if (r.pdvId) {
-      const pdvDoc = await firestore.collection('pointsDeVente').doc(r.pdvId).get();
-      if (pdvDoc.exists) {
-        const annulationsActuelles = pdvDoc.data().annulations || 0;
-        await firestore.collection('pointsDeVente').doc(r.pdvId).update({
-          annulations: annulationsActuelles + (r.nbPassagers || 1),
-          updatedAt:   new Date().toISOString(),
-        });
-      }
+      await firestore.collection('pointsDeVente').doc(r.pdvId).update({
+        annulations: FieldValue.increment(r.nbPassagers || 1),
+        updatedAt:   new Date().toISOString(),
+      }).catch(err => {
+        // Le PDV a pu être supprimé entre-temps — ne bloque pas l'annulation de la résa pour ça
+        console.error('Erreur incrément annulations PDV :', err);
+      });
     }
 
     return res.status(200).json({
@@ -561,14 +581,12 @@ router.patch('/:resaId/retirer-passager', verifierToken, async (req, res) => {
     });
 
     if (r.pdvId) {
-      const pdvDoc = await firestore.collection('pointsDeVente').doc(r.pdvId).get();
-      if (pdvDoc.exists) {
-        const annulationsActuelles = pdvDoc.data().annulations || 0;
-        await firestore.collection('pointsDeVente').doc(r.pdvId).update({
-          annulations: annulationsActuelles + 1,
-          updatedAt:   new Date().toISOString(),
-        });
-      }
+      await firestore.collection('pointsDeVente').doc(r.pdvId).update({
+        annulations: FieldValue.increment(1),
+        updatedAt:   new Date().toISOString(),
+      }).catch(err => {
+        console.error('Erreur incrément annulations PDV :', err);
+      });
     }
 
     return res.status(200).json({
