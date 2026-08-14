@@ -444,7 +444,7 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
     });
 
     let sessionsSupprimees = 0;
-    let busDesactives = 0;
+    let busModifies = 0;
 
     if (actif === false) {
       const departsSnap = await firestore.collection('departs')
@@ -460,7 +460,7 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
           actif: false,
           updatedAt: new Date().toISOString(),
         });
-        busDesactives++;
+        busModifies++;
 
         const sessionsSnap = await firestore.collection('sessions')
           .where('departId', '==', depart.id)
@@ -489,17 +489,17 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
           actif: true,
           updatedAt: new Date().toISOString(),
         });
-        busDesactives++;
+        busModifies++;
       }
       await batch.commitFinal();
     }
 
     return res.status(200).json({
       message: actif
-        ? `Trajet activé. ${busDesactives} bus réactivé(s). Pensez à régénérer les sessions.`
-        : `Trajet désactivé. ${busDesactives} bus désactivé(s), ${sessionsSupprimees} session(s) future(s) supprimée(s).`,
+        ? `Trajet activé. ${busModifies} bus réactivé(s). Pensez à régénérer les sessions.`
+        : `Trajet désactivé. ${busModifies} bus désactivé(s), ${sessionsSupprimees} session(s) future(s) supprimée(s).`,
       sessionsSupprimees,
-      busDesactives,
+      busDesactives: busModifies,
     });
 
   } catch (err) {

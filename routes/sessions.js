@@ -283,6 +283,23 @@ router.post('/session/:sessionId/reaffecter', verifierToken, verifierRole('admin
       }
     }
 
+    // ── Garde-fou : la transaction Firestore ne supporte pas plus de ~500
+    // opérations cumulées (lecture + écriture par réservation ≈ 2 ops).
+    // Au-delà de ce seuil, on refuse proprement plutôt que de laisser
+    // planter la transaction en cours de route.
+    const SEUIL_REAFFECTATION = 200;
+    const countSnap = await firestore.collection('reservations')
+      .where('sessionId', '==', sessionId)
+      .where('statut', '!=', 'annulée')
+      .count()
+      .get();
+
+    if (countSnap.data().count > SEUIL_REAFFECTATION) {
+      return res.status(409).json({
+        message: `Trop de réservations à réaffecter (${countSnap.data().count}). Contactez le support technique.`,
+      });
+    }
+
     // ID généré à l'avance (pas une lecture) pour une éventuelle nouvelle session cible
     const nouvelleCibleRef = firestore.collection('sessions').doc();
 

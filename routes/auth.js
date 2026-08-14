@@ -93,33 +93,4 @@ router.post('/login', verifierToken, async (req, res) => {
   }
 });
 
-// ════════════════════════════════
-//  MOT DE PASSE OUBLIÉ
-//  POST /auth/forgot-password
-// ════════════════════════════════
-router.post('/forgot-password', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ message: 'Email invalide.' });
-  }
-
-  try {
-    await auth.getUserByEmail(email);
-
-    return res.status(200).json({
-      message: 'Si cet email existe, un lien vous sera envoyé.',
-    });
-
-  } catch (error) {
-    if (error.code === 'auth/user-not-found') {
-      return res.status(200).json({
-        message: 'Si cet email existe, un lien vous sera envoyé.',
-      });
-    }
-    console.error('Erreur forgot password :', error);
-    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
-  }
-});
-
 module.exports = router;

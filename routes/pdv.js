@@ -58,15 +58,27 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     return res.status(400).json({ message: 'Le mot de passe doit faire au moins 6 caractères.' });
   }
 
+  let userRecord;
+
   try {
-    const userRecord = await auth.createUser({
+    userRecord = await auth.createUser({
       email:       emailConnexion,
       password,
       displayName: responsable,
     });
+  } catch (error) {
+    if (error.code === 'auth/email-already-exists') {
+      return res.status(409).json({ message: 'Cet email de connexion est déjà utilisé.' });
+    }
+    console.error('Erreur création compte Auth PDV :', error);
+    return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
+  }
 
+  let pdvId;
+
+  try {
     const pdvRef = firestore.collection('pointsDeVente').doc();
-    const pdvId  = pdvRef.id;
+    pdvId = pdvRef.id;
 
     const pdvData = {
       id:             pdvId,
@@ -106,10 +118,20 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     });
 
   } catch (error) {
-    if (error.code === 'auth/email-already-exists') {
-      return res.status(409).json({ message: 'Cet email de connexion est déjà utilisé.' });
+    // Rollback : on annule tout ce qui a été créé avant l'échec
+    try {
+      await auth.deleteUser(userRecord.uid);
+    } catch (rollbackErr) {
+      console.error('Échec du rollback Auth après erreur Firestore :', rollbackErr);
     }
-    console.error('Erreur création PDV :', error);
+
+    try {
+      await firestore.collection('pointsDeVente').doc(pdvId).delete();
+    } catch (rollbackErr) {
+      console.error('Échec du rollback pointsDeVente après erreur Firestore :', rollbackErr);
+    }
+
+    console.error('Erreur création PDV (Firestore) :', error);
     return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
   }
 });
@@ -439,17 +461,44 @@ router.delete('/:pdvId', verifierToken, verifierRole('admin'), async (req, res) 
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
+    // Étape 1 : suppression atomique des documents Firestore (users + pointsDeVente)
+    const batch = firestore.batch();
     if (agentUid) {
-      try {
-        await auth.deleteUser(agentUid);
-      } catch (authErr) {
-        console.warn('Compte Auth déjà supprimé ou introuvable :', authErr.message);
+      batch.delete(firestore.collection('users').doc(agentUid));
+    }
+    batch.delete(firestore.collection('pointsDeVente').doc(pdvId));
+
+    await batch.commit();
+
+    // Étape 2 : suppression du compte Auth, en dernier.
+    if (agentUid) {
+      const MAX_TENTATIVES = 3;
+      let derniereErreur = null;
+
+      for (let tentative = 1; tentative <= MAX_TENTATIVES; tentative++) {
+        try {
+          await auth.deleteUser(agentUid);
+          derniereErreur = null;
+          break;
+        } catch (authErr) {
+          if (authErr.code === 'auth/user-not-found') {
+            derniereErreur = null;
+            break;
+          }
+          derniereErreur = authErr;
+          if (tentative < MAX_TENTATIVES) {
+            await new Promise(r => setTimeout(r, 500 * tentative));
+          }
+        }
       }
 
-      await firestore.collection('users').doc(agentUid).delete();
-    }
-
-    await firestore.collection('pointsDeVente').doc(pdvId).delete();
+      if (derniereErreur) {
+        console.error(
+          `Compte Auth ${agentUid} non supprimé après ${MAX_TENTATIVES} tentatives (nettoyage manuel requis) :`,
+          derniereErreur.message
+        );
+      }
+    };
 
     return res.status(200).json({ message: 'PDV supprimé avec succès.' });
 

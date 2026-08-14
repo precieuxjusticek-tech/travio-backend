@@ -49,7 +49,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
     typeTrajet, routeLabel, heureDepart, dateDepart,
     arretMontee, arretDescente,
     prenomPassager, nomPassager, telephonePassager,
-    typeBillet, bagages, siege, prixBillet, prixBagages,
+    typeBillet, bagages, nombreBagages, siege, prixBillet, prixBagages,
     passagers, nbPassagers, prixTotal, remarques,
   } = req.body;
 
@@ -179,6 +179,7 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
           typeBillet:        typeBillet   || 'adulte',
           typeBilletNom:     req.body.typeBilletNom || null,
           bagages:           bagages      || 0,
+          nombreBagages:     nombreBagages || 0,
           siege:             siege        || null,
           prixBillet:        prixBillet   || 0,
           prixBagages:       prixBagages  || 0,
@@ -592,7 +593,7 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
   const { resaId } = req.params;
   const {
     prenomPassager, nomPassager, telephonePassager,
-    typeBillet, bagages, prixBillet, prixBagages,
+    typeBillet, bagages, nombreBagages, prixBillet, prixBagages,
     arretMontee, arretDescente, passagers, nbPassagers,
     prixTotal, remarques, routeLabel,
     pdvEmbarquementId, pdvEmbarquementNom, pdvEmbarquementVille,
@@ -679,6 +680,7 @@ router.patch('/:resaId', verifierToken, async (req, res) => {
       telephonePassager: telephonePassager || null,
       typeBillet:        typeBillet        || r.typeBillet,
       bagages:           bagages           ?? r.bagages,
+      nombreBagages:     nombreBagages     ?? r.nombreBagages,
       prixBillet:        prixBillet        ?? r.prixBillet,
       prixBagages:       prixBagages       ?? r.prixBagages,
       arretMontee:       nouveauMontee,
