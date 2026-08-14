@@ -18,6 +18,24 @@ function genererCodeRetrait() {
   return `TRV-${code}`;
 }
 
+// Génère un code de retrait en vérifiant son unicité en base (dans la transaction, pour éviter toute course).
+async function genererCodeRetraitUnique(t) {
+  let code, dejaUtilise = true;
+  let tentatives = 0;
+  while (dejaUtilise && tentatives < 10) {
+    code = genererCodeRetrait();
+    const snap = await t.get(
+      firestore.collection('colis').where('codeRetrait', '==', code).limit(1)
+    );
+    dejaUtilise = !snap.empty;
+    tentatives++;
+  }
+  if (dejaUtilise) {
+    throw new Error('Impossible de générer un code de retrait unique après plusieurs tentatives.');
+  }
+  return code;
+}
+
 // ════════════════════════════════
 //  CRÉER UN COLIS (EXPÉDITION PDV)
 //  POST /colis/create
@@ -87,9 +105,9 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       return res.status(404).json({ message: 'Trajet introuvable.' });
     }
 
-    const codeRetrait = genererCodeRetrait();
     const colisRef = firestore.collection('colis').doc();
     const colisId  = colisRef.id;
+    let codeRetrait;
 
     const data = {
       id: colisId,
@@ -120,7 +138,6 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       remarques:      remarques      || null,
 
       prixTransport: prixTransportNum,
-      codeRetrait,
       statut: 'en_transit', // en_transit -> arrive -> retire
 
       pdvIdRetrait: null,
@@ -137,7 +154,10 @@ router.post('/create', verifierToken, checkEssai, async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    await colisRef.set(data);
+    await firestore.runTransaction(async (t) => {
+      codeRetrait = await genererCodeRetraitUnique(t);
+      t.set(colisRef, { ...data, codeRetrait });
+    });
 
     return res.status(201).json({
       message:  'Colis enregistré avec succès.',

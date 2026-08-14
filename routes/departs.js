@@ -70,6 +70,9 @@ router.post('/trajet/:trajetId/depart/create', verifierToken, verifierRole('admi
     const ref = firestore.collection('departs').doc();
     const departData = {
       id: ref.id, trajetId, agenceId,
+      busNom, busType,
+      busCapacite: busCapaciteNum,
+      vehiculeId: vehiculeId || null,
       placesTotal: busCapaciteNum,
       placesVendues: 0,
       actif: true,

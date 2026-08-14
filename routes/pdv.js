@@ -58,6 +58,7 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     return res.status(400).json({ message: 'Le mot de passe doit faire au moins 6 caractères.' });
   }
 
+  let pdvId;
   let userRecord;
 
   try {
@@ -74,9 +75,9 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
     return res.status(500).json({ message: 'Erreur serveur, réessayez.' });
   }
 
-  let pdvId;
-
   try {
+    try {
+
     const pdvRef = firestore.collection('pointsDeVente').doc();
     pdvId = pdvRef.id;
 
@@ -116,6 +117,17 @@ router.post('/create', verifierToken, verifierRole('admin'), checkEssai, async (
       message: 'Point de vente créé avec succès.',
       pdv:     pdvSansPassword,
     });
+
+    } catch (firestoreErr) {
+      // Le compte Auth a été créé mais Firestore a échoué — on nettoie pour éviter un compte orphelin
+      console.error('Erreur écriture Firestore après création Auth, rollback :', firestoreErr);
+      try {
+        await auth.deleteUser(userRecord.uid);
+      } catch (rollbackErr) {
+        console.error('Échec du rollback (suppression compte Auth orphelin) :', rollbackErr);
+      }
+      throw firestoreErr;
+    }
 
   } catch (error) {
     // Rollback : on annule tout ce qui a été créé avant l'échec
@@ -300,11 +312,22 @@ router.patch('/:pdvId/statut', verifierToken, verifierRole('admin'), async (req,
       return res.status(403).json({ message: "Période d'essai expirée.", code: 'ESSAI_EXPIRE' });
     }
 
+    const actifPrecedent = docCheck.data().actif;
+    const agentUid       = docCheck.data().agentUid;
+
     await firestore.collection('pointsDeVente').doc(pdvId).update({ actif });
 
-    const doc = await firestore.collection('pointsDeVente').doc(pdvId).get();
-    if (doc.exists && doc.data().agentUid) {
-      await auth.updateUser(doc.data().agentUid, { disabled: !actif });
+    if (agentUid) {
+      try {
+        await auth.updateUser(agentUid, { disabled: !actif });
+      } catch (authErr) {
+        // L'update Auth a échoué — on revient en arrière côté Firestore pour rester cohérent
+        console.error('Erreur update Auth statut agent, rollback Firestore :', authErr);
+        await firestore.collection('pointsDeVente').doc(pdvId).update({ actif: actifPrecedent }).catch(rollbackErr => {
+          console.error('Échec du rollback statut PDV :', rollbackErr);
+        });
+        return res.status(500).json({ message: "Erreur lors de la mise à jour du compte agent, réessayez." });
+      }
     }
 
     return res.status(200).json({

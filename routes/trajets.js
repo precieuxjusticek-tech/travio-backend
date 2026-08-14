@@ -455,9 +455,13 @@ router.patch('/:trajetId/statut', verifierToken, verifierRole('admin'), async (r
 
       for (const departDoc of departsSnap.docs) {
         const depart = departDoc.data();
+        // On ne marque "désactivé par le trajet" que si le bus était actif avant —
+        // ça permet de ne pas réactiver par erreur un bus déjà désactivé manuellement.
+        const etaitActifAvant = depart.actif !== false;
 
         await batch.update(departDoc.ref, {
           actif: false,
+          ...(etaitActifAvant && { desactiveParTrajet: true }),
           updatedAt: new Date().toISOString(),
         });
         busModifies++;

@@ -2,12 +2,19 @@ const express = require('express');
 const router  = express.Router();
 
 const { firestore } = require('../firebase');
+const rateLimit = require('express-rate-limit');
+
+const supportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: 'Trop de messages envoyés, réessayez plus tard.' },
+});
 
 // ════════════════════════════════
 //  SUPPORT — RECEVOIR UN MESSAGE
 //  POST /support/create
 // ════════════════════════════════
-router.post('/create', async (req, res) => {
+router.post('/create', supportLimiter, async (req, res) => {
   const { type, sujet, message, email, agenceId } = req.body;
 
   if (!type || !sujet || !message) {

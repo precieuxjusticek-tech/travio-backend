@@ -199,6 +199,12 @@ router.patch('/:vehiculeId/statut', verifierToken, verifierRole('admin'), async 
     const batch = creerBatchAutoCommit(firestore);
 
     for (const departDoc of departsSnap.docs) {
+      const depart = departDoc.data();
+      // Si le bus est réactivé mais que son trajet est encore désactivé (desactiveParTrajet),
+      // on ne le remet pas actif — sinon on court-circuite la désactivation du trajet.
+      if (actif === true && depart.desactiveParTrajet === true) {
+        continue;
+      }
       await batch.update(departDoc.ref, { actif, updatedAt: new Date().toISOString() });
       departsAffectes++;
       if (actif === false) {

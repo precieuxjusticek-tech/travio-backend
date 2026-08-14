@@ -8,6 +8,7 @@ const { getSegmentsTrajet } = require('../helpers/segments');
 const { verifierToken } = require('../middlewares/verifierToken');
 const { verifierRole } = require('../middlewares/verifierRole');
 const { creerBatchAutoCommit } = require('../helpers/batch');
+const { FieldValue } = require('firebase-admin/firestore');
 
 // ════════════════════════════════
 //  SESSIONS D'UN DÉPART
@@ -486,10 +487,10 @@ router.post('/session/:sessionId/annuler-toutes', verifierToken, verifierRole('a
     }
 
     for (const [pdvId, nb] of Object.entries(pdvIncrements)) {
-      const pdvDoc = await firestore.collection('pointsDeVente').doc(pdvId).get();
-      if (pdvDoc.exists) {
-        await batch.update(pdvDoc.ref, { annulations: (pdvDoc.data().annulations || 0) + nb, updatedAt: now });
-      }
+      await batch.update(firestore.collection('pointsDeVente').doc(pdvId), {
+        annulations: FieldValue.increment(nb),
+        updatedAt:   now,
+      });
     }
 
     await batch.commitFinal();

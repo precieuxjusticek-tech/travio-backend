@@ -1,15 +1,31 @@
 const express = require('express');
 const router  = express.Router();
+const rateLimit = require('express-rate-limit');
 
 const { firestore } = require('../firebase');
+
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { message: 'Trop de tentatives, réessayez plus tard.' },
+});
+
+// Vérifie la clé admin ET s'assure que la variable d'environnement est bien configurée —
+// sans ce garde-fou, une variable manquante (undefined) rendrait la vérification inutile
+// si l'appelant omet aussi le paramètre adminKey.
+function verifierAdminKey(fourni) {
+  return typeof process.env.ADMIN_SECRET_KEY === 'string' &&
+         process.env.ADMIN_SECRET_KEY.length > 0 &&
+         fourni === process.env.ADMIN_SECRET_KEY;
+}
 
 // ════════════════════════════════
 //  LISTE DES AGENCES
 //  GET /admin/agences?adminKey=xxx
 // ════════════════════════════════
-router.get('/agences', async (req, res) => {
+router.get('/agences', adminLimiter, async (req, res) => {
   const { adminKey } = req.query;
-  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+  if (!verifierAdminKey(adminKey)) {
     return res.status(403).json({ message: 'Non autorisé.' });
   }
   try {
@@ -49,11 +65,11 @@ router.get('/agences', async (req, res) => {
 //  SUSPENDRE / RÉACTIVER
 //  PATCH /admin/agence/:agenceId/statut
 // ════════════════════════════════
-router.patch('/agence/:agenceId/statut', async (req, res) => {
+router.patch('/agence/:agenceId/statut', adminLimiter, async (req, res) => {
   const { agenceId } = req.params;
   const { adminKey, actif } = req.body;
 
-  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+  if (!verifierAdminKey(adminKey)) {
     return res.status(403).json({ message: 'Non autorisé.' });
   }
   if (typeof actif !== 'boolean') {
