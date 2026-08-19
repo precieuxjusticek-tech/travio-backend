@@ -15,7 +15,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 //  GET /sessions?departId=xxx
 // ════════════════════════════════
 router.get('/sessions', verifierToken, async (req, res) => {
-  const { departId } = req.query;
+  const { departId, historique } = req.query;
   if (!departId) return res.status(400).json({ message: 'departId manquant.' });
 
   try {
@@ -27,10 +27,19 @@ router.get('/sessions', verifierToken, async (req, res) => {
 
     const todayStr = todayBrazza();
 
+    // Par défaut : uniquement les sessions à venir (comportement inchangé, utilisé par la vente PDV/siège).
+    // ?historique=true : élargit la fenêtre à 30 jours en arrière (page Départs siège uniquement).
+    let dateDebut = todayStr;
+    if (historique === 'true') {
+      const d = new Date(todayStr + 'T00:00:00');
+      d.setDate(d.getDate() - 30);
+      dateDebut = d.toISOString().split('T')[0];
+    }
+
     const snapshot = await firestore
       .collection('sessions')
       .where('departId', '==', departId)
-      .where('date', '>=', todayStr)
+      .where('date', '>=', dateDebut)
       .orderBy('date', 'asc')
       .get();
 
