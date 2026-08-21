@@ -264,7 +264,9 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
     }
 
     const pdvArretsRecalc = arrets !== undefined
-      ? arrets.filter(a => a.type === 'pdv').map(a => ({ id: a.id, nom: a.nom, ville: a.ville || '' }))
+      ? arrets.filter(a => a.type === 'pdv').flatMap(a =>
+          (a.pdvs || []).map(p => ({ id: p.id, nom: p.nom, ville: a.ville || '' }))
+        )
       : undefined;
 
     const updateData = {
@@ -296,7 +298,7 @@ router.patch('/:trajetId', verifierToken, verifierRole('admin'), async (req, res
 
       for (const doc of sessionsSnap.docs) {
         const session = doc.data();
-        const nomsNouveaux = arrets.map(a => a.nom);
+        const nomsNouveaux = arrets.map(a => a.ville || a.nom);
         const arretsActifsFiltres = (session.arretsActifs || [])
           .filter(a => nomsNouveaux.includes(a.nom));
 
