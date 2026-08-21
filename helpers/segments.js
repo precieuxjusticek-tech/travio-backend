@@ -1,8 +1,13 @@
-// Calcule quels tronçons sont couverts par un trajet montée→descente
 function getSegmentsTrajet(trajet, arretMontee, arretDescente) {
+  const villesArrets = [];
+  (trajet.arrets || []).forEach(a => {
+    const ville = a.ville || a.nom;
+    if (ville && !villesArrets.includes(ville)) villesArrets.push(ville);
+  });
+
   const allPoints = [
     trajet.villeDepart,
-    ...(trajet.arrets || []).map(a => a.ville || a.nom),
+    ...villesArrets,
     trajet.villeArrivee,
   ];
   const nbSegments = allPoints.length - 1;
@@ -14,7 +19,7 @@ function getSegmentsTrajet(trajet, arretMontee, arretDescente) {
   const idxDescente = allPoints.indexOf(descenteNom);
 
   if (idxMontee === -1 || idxDescente === -1 || idxDescente <= idxMontee) {
-    return null; // segment invalide
+    return null;
   }
 
   const segments = [];
